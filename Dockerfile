@@ -1,10 +1,11 @@
 FROM golang:1.14-alpine as build
-RUN apk add --no-cache git gcc musl-dev
+RUN apk add --no-cache git gcc musl-dev sqlite-dev
 ADD . /app
 WORKDIR /app
-RUN go build
+RUN go build --tags "libsqlite3 linux"
 
 FROM alpine:3.11
+RUN apk add --no-cache sqlite-dev
 COPY --from=build /app/goshort /bin/
 WORKDIR /app
 VOLUME /app/config
