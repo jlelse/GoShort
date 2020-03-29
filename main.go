@@ -52,6 +52,7 @@ func main() {
 
 	r := mux.NewRouter()
 	r.HandleFunc("/s", ShortenHandler)
+	r.HandleFunc("/d", DeleteHandler)
 	r.HandleFunc("/{slug}", ShortenedUrlHandler)
 	r.HandleFunc("/", CatchAllHandler)
 
@@ -134,6 +135,39 @@ func ShortenHandler(w http.ResponseWriter, r *http.Request) {
 
 	w.WriteHeader(http.StatusCreated)
 	writeShortenedUrl(w, slug)
+}
+
+func DeleteHandler(w http.ResponseWriter, r *http.Request) {
+	password := r.URL.Query().Get("password")
+	if password != viper.GetString("password") {
+		http.Error(w, "Wrong password", http.StatusBadRequest)
+		return
+	}
+
+	slug := r.URL.Query().Get("slug")
+	if slug == "" {
+		http.Error(w, "Specify the slug to delete", http.StatusBadRequest)
+		return
+	}
+
+	if err, e := slugExists(slug); !e || err != nil {
+		http.Error(w, "Slug not found", http.StatusNotFound)
+		return
+	}
+
+	stmt, err := db.Prepare("DELETE FROM redirect WHERE slug = ?")
+	if err != nil {
+		http.Error(w, err.Error(), http.StatusInternalServerError)
+		return
+	}
+	_, err = stmt.Exec(slug)
+	if err != nil {
+		http.Error(w, err.Error(), http.StatusInternalServerError)
+		return
+	}
+
+	w.WriteHeader(http.StatusAccepted)
+	_, _ = w.Write([]byte("Slug deleted"))
 }
 
 func generateSlug() string {
