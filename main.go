@@ -9,7 +9,6 @@ import (
 	"log"
 	"math/rand"
 	"net/http"
-	"net/url"
 	"time"
 )
 
@@ -82,13 +81,7 @@ func ShortenHandler(w http.ResponseWriter, r *http.Request) {
 	}
 
 	writeShortenedUrl := func(w http.ResponseWriter, slug string) {
-		shortenedUrl, err := url.Parse(viper.GetString("shortUrl"))
-		if err != nil {
-			http.Error(w, err.Error(), http.StatusInternalServerError)
-			return
-		}
-		shortenedUrl.Path = slug
-		_, _ = w.Write([]byte(shortenedUrl.String()))
+		_, _ = w.Write([]byte(viper.GetString("shortUrl") + "/" + slug))
 	}
 
 	requestUrl := r.URL.Query().Get("url")
