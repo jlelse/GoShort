@@ -98,12 +98,19 @@ func ShortenHandler(w http.ResponseWriter, r *http.Request) {
 	}
 
 	slug := r.URL.Query().Get("slug")
+	manualSlug := false
 	if slug == "" {
 		_ = db.QueryRow("SELECT slug FROM redirect WHERE url = ?", requestUrl).Scan(&slug)
+	} else {
+		manualSlug = true
 	}
 
 	if slug != "" {
 		if _, e := slugExists(slug); e {
+			if manualSlug {
+				http.Error(w, "slug already in use", http.StatusBadRequest)
+				return
+			}
 			writeShortenedUrl(w, slug)
 			return
 		}
