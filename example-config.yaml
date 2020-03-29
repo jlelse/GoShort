@@ -1,0 +1,4 @@
+dbPath: "data/goshort.db"
+password: "password"
+shortUrl: "https://short.example.com"
+defaultUrl: "https://long.example.com"
