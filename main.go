@@ -98,20 +98,26 @@ func ShortenHandler(w http.ResponseWriter, r *http.Request) {
 		return
 	}
 
-	var slug string
-	err := db.QueryRow("SELECT slug FROM redirect WHERE url = ?", requestUrl).Scan(&slug)
-	if err == nil {
-		writeShortenedUrl(w, slug)
-		return
+	slug := r.URL.Query().Get("slug")
+	if slug == "" {
+		_ = db.QueryRow("SELECT slug FROM redirect WHERE url = ?", requestUrl).Scan(&slug)
 	}
 
-	var exists = true
-	for exists == true {
-		slug = generateSlug()
-		err, exists = slugExists(slug)
-		if err != nil {
-			http.Error(w, err.Error(), http.StatusInternalServerError)
+	if slug != "" {
+		if _, e := slugExists(slug); e {
+			writeShortenedUrl(w, slug)
 			return
+		}
+	} else {
+		var exists = true
+		for exists == true {
+			slug = generateSlug()
+			var err error
+			err, exists = slugExists(slug)
+			if err != nil {
+				http.Error(w, err.Error(), http.StatusInternalServerError)
+				return
+			}
 		}
 	}
 
