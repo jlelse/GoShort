@@ -218,16 +218,13 @@ func ShortenedUrlHandler(w http.ResponseWriter, r *http.Request) {
 		return
 	}
 
-	stmt, err := db.Prepare("UPDATE redirect SET hits = hits + 1 WHERE slug = ?")
-	if err != nil {
-		http.Error(w, err.Error(), http.StatusInternalServerError)
-		return
-	}
-	_, err = stmt.Exec(slug)
-	if err != nil {
-		http.Error(w, err.Error(), http.StatusInternalServerError)
-		return
-	}
+	go func() {
+		stmt, err := db.Prepare("UPDATE redirect SET hits = hits + 1 WHERE slug = ?")
+		if err != nil {
+			return
+		}
+		_, _ = stmt.Exec(slug)
+	}()
 
 	http.Redirect(w, r, redirectUrl, http.StatusTemporaryRedirect)
 }
