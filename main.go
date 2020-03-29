@@ -127,12 +127,7 @@ func ShortenHandler(w http.ResponseWriter, r *http.Request) {
 		}
 	}
 
-	stmt, err := db.Prepare("INSERT INTO redirect (slug, url, hits) VALUES (?, ?, ?)")
-	if err != nil {
-		http.Error(w, err.Error(), http.StatusInternalServerError)
-		return
-	}
-	_, err = stmt.Exec(slug, requestUrl, 0)
+	_, err := db.Exec("INSERT INTO redirect (slug, url) VALUES (?, ?)", slug, requestUrl)
 	if err != nil {
 		http.Error(w, err.Error(), http.StatusInternalServerError)
 		return
@@ -158,12 +153,7 @@ func DeleteHandler(w http.ResponseWriter, r *http.Request) {
 		return
 	}
 
-	stmt, err := db.Prepare("DELETE FROM redirect WHERE slug = ?")
-	if err != nil {
-		http.Error(w, err.Error(), http.StatusInternalServerError)
-		return
-	}
-	_, err = stmt.Exec(slug)
+	_, err := db.Exec("DELETE FROM redirect WHERE slug = ?", slug)
 	if err != nil {
 		http.Error(w, err.Error(), http.StatusInternalServerError)
 		return
@@ -219,11 +209,7 @@ func ShortenedUrlHandler(w http.ResponseWriter, r *http.Request) {
 	}
 
 	go func() {
-		stmt, err := db.Prepare("UPDATE redirect SET hits = hits + 1 WHERE slug = ?")
-		if err != nil {
-			return
-		}
-		_, _ = stmt.Exec(slug)
+		_, _ = db.Exec("UPDATE redirect SET hits = hits + 1 WHERE slug = ?", slug)
 	}()
 
 	http.Redirect(w, r, redirectUrl, http.StatusTemporaryRedirect)
