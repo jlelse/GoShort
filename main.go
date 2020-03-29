@@ -77,6 +77,10 @@ func MigrateDatabase() {
 }
 
 func ShortenHandler(w http.ResponseWriter, r *http.Request) {
+	if !checkPassword(w, r) {
+		return
+	}
+
 	writeShortenedUrl := func(w http.ResponseWriter, slug string) {
 		shortenedUrl, err := url.Parse(viper.GetString("shortUrl"))
 		if err != nil {
@@ -85,12 +89,6 @@ func ShortenHandler(w http.ResponseWriter, r *http.Request) {
 		}
 		shortenedUrl.Path = slug
 		_, _ = w.Write([]byte(shortenedUrl.String()))
-	}
-
-	password := r.URL.Query().Get("password")
-	if password != viper.GetString("password") {
-		http.Error(w, "Wrong password", http.StatusBadRequest)
-		return
 	}
 
 	requestUrl := r.URL.Query().Get("url")
@@ -138,9 +136,7 @@ func ShortenHandler(w http.ResponseWriter, r *http.Request) {
 }
 
 func DeleteHandler(w http.ResponseWriter, r *http.Request) {
-	password := r.URL.Query().Get("password")
-	if password != viper.GetString("password") {
-		http.Error(w, "Wrong password", http.StatusBadRequest)
+	if !checkPassword(w, r) {
 		return
 	}
 
@@ -168,6 +164,19 @@ func DeleteHandler(w http.ResponseWriter, r *http.Request) {
 
 	w.WriteHeader(http.StatusAccepted)
 	_, _ = w.Write([]byte("Slug deleted"))
+}
+
+func checkPassword(w http.ResponseWriter, r *http.Request) bool {
+	if r.URL.Query().Get("password") == viper.GetString("password") {
+		return true
+	}
+	_, pass, ok := r.BasicAuth()
+	if !(ok && pass == viper.GetString("password")) {
+		w.Header().Set("WWW-Authenticate", `Basic realm="Please enter a password!"`)
+		http.Error(w, "Not authenticated", http.StatusUnauthorized)
+		return false
+	}
+	return true
 }
 
 func generateSlug() string {
