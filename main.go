@@ -51,6 +51,7 @@ func main() {
 
 	r := mux.NewRouter()
 	r.HandleFunc("/s", ShortenHandler)
+	r.HandleFunc("/u", UpdateHandler)
 	r.HandleFunc("/d", DeleteHandler)
 	r.HandleFunc("/{slug}", ShortenedUrlHandler)
 	r.HandleFunc("/", CatchAllHandler)
@@ -128,6 +129,38 @@ func ShortenHandler(w http.ResponseWriter, r *http.Request) {
 
 	w.WriteHeader(http.StatusCreated)
 	writeShortenedUrl(w, slug)
+}
+
+func UpdateHandler(w http.ResponseWriter, r *http.Request) {
+	if !checkPassword(w, r) {
+		return
+	}
+
+	slug := r.URL.Query().Get("slug")
+	if slug == "" {
+		http.Error(w, "Specify the slug to update", http.StatusBadRequest)
+		return
+	}
+
+	newUrl := r.URL.Query().Get("new")
+	if newUrl == "" {
+		http.Error(w, "Specify the new URL", http.StatusBadRequest)
+		return
+	}
+
+	if err, e := slugExists(slug); !e || err != nil {
+		http.Error(w, "Slug not found", http.StatusNotFound)
+		return
+	}
+
+	_, err := db.Exec("UPDATE redirect SET url = ? WHERE slug = ?", newUrl, slug)
+	if err != nil {
+		http.Error(w, err.Error(), http.StatusInternalServerError)
+		return
+	}
+
+	w.WriteHeader(http.StatusAccepted)
+	_, _ = w.Write([]byte("Slug updated"))
 }
 
 func DeleteHandler(w http.ResponseWriter, r *http.Request) {
