@@ -18,13 +18,21 @@ These are optional config values:
 
 See the `example-config.yaml` file for an example configuration.
 
+## Authentication
+
+The preferred authentication method is Basic Authentication. If you try to create, modify or delete a short link, in the browser a popup will appear asking for username and password. Enter just the password you configured. Alternatively you can append a URL query parameter `password` with your configured password.
+
 ## Create a new short link
 
-To create a new short link, open "`shortUrl` + `/s?url=` + URL to shorten" in the browser. If you want, you can append `&slug=` with the preferred slug.
+To create a new short link, call "`shortUrl` + `/s?url=` + URL to shorten". If you want, you can append `&slug=` with the preferred slug.
+
+## Update a short link
+
+To update a short link, call "`shortUrl` + `/d?slug=` + slug to update + `&new=` + new long URL"
 
 ## Delete a short link
 
-To delete a short link, open "`shortUrl` + `/d?slug=` + slug to delete" in the browser.
+To delete a short link, call "`shortUrl` + `/d?slug=` + slug to delete".
 
 ## License
 
