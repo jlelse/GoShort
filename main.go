@@ -87,7 +87,7 @@ func ShortenFormHandler(w http.ResponseWriter, r *http.Request) {
 		return
 	}
 
-	err := generateForm(w, "Shorten URL", "s", []string{"url", "slug"})
+	err := generateForm(w, "Shorten URL", "s", [][]string{{"url", r.FormValue("url")}, {"slug", r.FormValue("slug")}})
 	if err != nil {
 		http.Error(w, err.Error(), http.StatusInternalServerError)
 	}
@@ -100,7 +100,7 @@ func UpdateFormHandler(w http.ResponseWriter, r *http.Request) {
 		return
 	}
 
-	err := generateForm(w, "Update short link", "u", []string{"slug", "new"})
+	err := generateForm(w, "Update short link", "u", [][]string{{"slug", r.FormValue("slug")}, {"new", r.FormValue("new")}})
 	if err != nil {
 		http.Error(w, err.Error(), http.StatusInternalServerError)
 	}
@@ -113,21 +113,21 @@ func DeleteFormHandler(w http.ResponseWriter, r *http.Request) {
 		return
 	}
 
-	err := generateForm(w, "Delete short link", "d", []string{"slug"})
+	err := generateForm(w, "Delete short link", "d", [][]string{{"slug", r.FormValue("slug")}})
 	if err != nil {
 		http.Error(w, err.Error(), http.StatusInternalServerError)
 	}
 }
 
-func generateForm(w http.ResponseWriter, title string, url string, fields []string) error {
-	tmpl, err := template.New("Form").Parse("<!doctype html><html lang=en><title>{{.Title}}</title><h1>{{.Title}}</h1><form action={{.Url}} method=post>{{range .Fields}}<input type=text name={{.}} placeholder={{.}} /><br><br>{{end}}<input type=submit value={{.Title}}></form></html>")
+func generateForm(w http.ResponseWriter, title string, url string, fields [][]string) error {
+	tmpl, err := template.New("Form").Parse("<!doctype html><html lang=en><title>{{.Title}}</title><h1>{{.Title}}</h1><form action={{.Url}} method=post>{{range .Fields}}<input type=text name={{index . 0}} placeholder={{index . 0}} value={{index . 1}}><br><br>{{end}}<input type=submit value={{.Title}}></form></html>")
 	if err != nil {
 		return err
 	}
 	err = tmpl.Execute(w, &struct {
 		Title  string
 		Url    string
-		Fields []string
+		Fields [][]string
 	}{
 		Title:  title,
 		Url:    url,
