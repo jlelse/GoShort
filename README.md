@@ -8,7 +8,7 @@ Configuration can be done with a simple `config.{json|yaml|toml}` file in the wo
 
 These are the required config values:
 
-* `password`: Password to create or delete short links
+* `password`: Password to create, update or delete short links
 * `shortUrl`: The short base URL (without trailing slash!)
 * `defaultUrl`: The default URL to which should be redirected when no slug is specified
 
@@ -22,17 +22,18 @@ See the `example-config.yaml` file for an example configuration.
 
 The preferred authentication method is Basic Authentication. If you try to create, modify or delete a short link, in the browser a popup will appear asking for username and password. Enter just the password you configured. Alternatively you can append a URL query parameter `password` with your configured password.
 
-## Create a new short link
+## Usage
 
-To create a new short link, call "`shortUrl` + `/s?url=` + URL to shorten". If you want, you can append `&slug=` with the preferred slug.
+You can either create, update or delete short links using a browser by entering the short URL and the path for the method. Or you can make a HTTP `POST` request with the parameters.
 
-## Update a short link
-
-To update a short link, call "`shortUrl` + `/d?slug=` + slug to update + `&new=` + new long URL"
-
-## Delete a short link
-
-To delete a short link, call "`shortUrl` + `/d?slug=` + slug to delete".
+- Create a new short link: `/s`
+    - `url`: URL to shorten
+    - (optional) `slug`: the preferred slug
+- Update a short link: `/u`
+    - `slug`: slug to update
+    - `new`: new long URL
+- Delete a short link: `/d`
+    - `slug`: slug to delete
 
 ## License
 

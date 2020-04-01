@@ -6,6 +6,7 @@ import (
 	_ "github.com/mattn/go-sqlite3"
 	"github.com/rubenv/sql-migrate"
 	"github.com/spf13/viper"
+	"html/template"
 	"log"
 	"math/rand"
 	"net/http"
@@ -50,9 +51,12 @@ func main() {
 	}()
 
 	r := mux.NewRouter()
-	r.HandleFunc("/s", ShortenHandler)
-	r.HandleFunc("/u", UpdateHandler)
-	r.HandleFunc("/d", DeleteHandler)
+	r.HandleFunc("/s", ShortenFormHandler).Methods(http.MethodGet)
+	r.HandleFunc("/s", ShortenHandler).Methods(http.MethodPost)
+	r.HandleFunc("/u", UpdateFormHandler).Methods(http.MethodGet)
+	r.HandleFunc("/u", UpdateHandler).Methods(http.MethodPost)
+	r.HandleFunc("/d", DeleteFormHandler).Methods(http.MethodGet)
+	r.HandleFunc("/d", DeleteHandler).Methods(http.MethodPost)
 	r.HandleFunc("/{slug}", ShortenedUrlHandler)
 	r.HandleFunc("/", CatchAllHandler)
 
@@ -76,7 +80,68 @@ func MigrateDatabase() {
 	}
 }
 
+func ShortenFormHandler(w http.ResponseWriter, r *http.Request) {
+	_ = r.ParseForm()
+
+	if !checkPassword(w, r) {
+		return
+	}
+
+	err := generateForm(w, "Shorten URL", "s", []string{"url", "slug"})
+	if err != nil {
+		http.Error(w, err.Error(), http.StatusInternalServerError)
+	}
+}
+
+func UpdateFormHandler(w http.ResponseWriter, r *http.Request) {
+	_ = r.ParseForm()
+
+	if !checkPassword(w, r) {
+		return
+	}
+
+	err := generateForm(w, "Update short link", "u", []string{"slug", "new"})
+	if err != nil {
+		http.Error(w, err.Error(), http.StatusInternalServerError)
+	}
+}
+
+func DeleteFormHandler(w http.ResponseWriter, r *http.Request) {
+	_ = r.ParseForm()
+
+	if !checkPassword(w, r) {
+		return
+	}
+
+	err := generateForm(w, "Delete short link", "d", []string{"slug"})
+	if err != nil {
+		http.Error(w, err.Error(), http.StatusInternalServerError)
+	}
+}
+
+func generateForm(w http.ResponseWriter, title string, url string, fields []string) error {
+	tmpl, err := template.New("Form").Parse("<!doctype html><html lang=en><title>{{.Title}}</title><h1>{{.Title}}</h1><form action={{.Url}} method=post>{{range .Fields}}<input type=text name={{.}} placeholder={{.}} /><br><br>{{end}}<input type=submit value={{.Title}}></form></html>")
+	if err != nil {
+		return err
+	}
+	err = tmpl.Execute(w, &struct {
+		Title  string
+		Url    string
+		Fields []string
+	}{
+		Title:  title,
+		Url:    url,
+		Fields: fields,
+	})
+	if err != nil {
+		return err
+	}
+	return nil
+}
+
 func ShortenHandler(w http.ResponseWriter, r *http.Request) {
+	_ = r.ParseForm()
+
 	if !checkPassword(w, r) {
 		return
 	}
@@ -85,13 +150,13 @@ func ShortenHandler(w http.ResponseWriter, r *http.Request) {
 		_, _ = w.Write([]byte(viper.GetString("shortUrl") + "/" + slug))
 	}
 
-	requestUrl := r.URL.Query().Get("url")
+	requestUrl := r.FormValue("url")
 	if requestUrl == "" {
 		http.Error(w, "url parameter not set", http.StatusBadRequest)
 		return
 	}
 
-	slug := r.URL.Query().Get("slug")
+	slug := r.FormValue("slug")
 	manualSlug := false
 	if slug == "" {
 		_ = db.QueryRow("SELECT slug FROM redirect WHERE url = ?", requestUrl).Scan(&slug)
@@ -132,17 +197,19 @@ func ShortenHandler(w http.ResponseWriter, r *http.Request) {
 }
 
 func UpdateHandler(w http.ResponseWriter, r *http.Request) {
+	_ = r.ParseForm()
+
 	if !checkPassword(w, r) {
 		return
 	}
 
-	slug := r.URL.Query().Get("slug")
+	slug := r.FormValue("slug")
 	if slug == "" {
 		http.Error(w, "Specify the slug to update", http.StatusBadRequest)
 		return
 	}
 
-	newUrl := r.URL.Query().Get("new")
+	newUrl := r.FormValue("new")
 	if newUrl == "" {
 		http.Error(w, "Specify the new URL", http.StatusBadRequest)
 		return
@@ -164,11 +231,13 @@ func UpdateHandler(w http.ResponseWriter, r *http.Request) {
 }
 
 func DeleteHandler(w http.ResponseWriter, r *http.Request) {
+	_ = r.ParseForm()
+
 	if !checkPassword(w, r) {
 		return
 	}
 
-	slug := r.URL.Query().Get("slug")
+	slug := r.FormValue("slug")
 	if slug == "" {
 		http.Error(w, "Specify the slug to delete", http.StatusBadRequest)
 		return
@@ -190,7 +259,7 @@ func DeleteHandler(w http.ResponseWriter, r *http.Request) {
 }
 
 func checkPassword(w http.ResponseWriter, r *http.Request) bool {
-	if r.URL.Query().Get("password") == viper.GetString("password") {
+	if r.FormValue("password") == viper.GetString("password") {
 		return true
 	}
 	_, pass, ok := r.BasicAuth()
