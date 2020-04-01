@@ -120,7 +120,7 @@ func DeleteFormHandler(w http.ResponseWriter, r *http.Request) {
 }
 
 func generateForm(w http.ResponseWriter, title string, url string, fields [][]string) error {
-	tmpl, err := template.New("Form").Parse("<!doctype html><html lang=en><title>{{.Title}}</title><h1>{{.Title}}</h1><form action={{.Url}} method=post>{{range .Fields}}<input type=text name={{index . 0}} placeholder={{index . 0}} value={{index . 1}}><br><br>{{end}}<input type=submit value={{.Title}}></form></html>")
+	tmpl, err := template.New("Form").Parse("<!doctype html><html lang=en><meta name=viewport content=\"width=device-width, initial-scale=1.0\"><title>{{.Title}}</title><h1>{{.Title}}</h1><form action={{.Url}} method=post>{{range .Fields}}<input type=text name={{index . 0}} placeholder={{index . 0}} value=\"{{index . 1}}\"><br><br>{{end}}<input type=submit value={{.Title}}></form></html>")
 	if err != nil {
 		return err
 	}
