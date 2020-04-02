@@ -44,19 +44,22 @@ func main() {
 		log.Fatal(err)
 	}
 
-	MigrateDatabase()
+	migrateDatabase()
 
 	defer func() {
 		_ = db.Close()
 	}()
 
 	r := mux.NewRouter()
-	r.HandleFunc("/s", ShortenFormHandler).Methods(http.MethodGet)
-	r.HandleFunc("/s", ShortenHandler).Methods(http.MethodPost)
-	r.HandleFunc("/u", UpdateFormHandler).Methods(http.MethodGet)
-	r.HandleFunc("/u", UpdateHandler).Methods(http.MethodPost)
-	r.HandleFunc("/d", DeleteFormHandler).Methods(http.MethodGet)
-	r.HandleFunc("/d", DeleteHandler).Methods(http.MethodPost)
+	admin := r.NewRoute().Subrouter()
+	admin.HandleFunc("/s", ShortenFormHandler).Methods(http.MethodGet)
+	admin.HandleFunc("/s", ShortenHandler).Methods(http.MethodPost)
+	admin.HandleFunc("/u", UpdateFormHandler).Methods(http.MethodGet)
+	admin.HandleFunc("/u", UpdateHandler).Methods(http.MethodPost)
+	admin.HandleFunc("/d", DeleteFormHandler).Methods(http.MethodGet)
+	admin.HandleFunc("/d", DeleteHandler).Methods(http.MethodPost)
+	admin.HandleFunc("/l", ListHandler).Methods(http.MethodGet)
+	admin.Use(loginMiddleware)
 	r.HandleFunc("/{slug}", ShortenedUrlHandler)
 	r.HandleFunc("/", CatchAllHandler)
 
@@ -64,7 +67,17 @@ func main() {
 	log.Fatal(http.ListenAndServe(":8080", nil))
 }
 
-func MigrateDatabase() {
+func loginMiddleware(next http.Handler) http.Handler {
+	return http.HandlerFunc(func(w http.ResponseWriter, r *http.Request) {
+		_ = r.ParseForm()
+		if !checkPassword(w, r) {
+			return
+		}
+		next.ServeHTTP(w, r)
+	})
+}
+
+func migrateDatabase() {
 	migrations := &migrate.MemoryMigrationSource{
 		Migrations: []*migrate.Migration{
 			{
@@ -81,12 +94,6 @@ func MigrateDatabase() {
 }
 
 func ShortenFormHandler(w http.ResponseWriter, r *http.Request) {
-	_ = r.ParseForm()
-
-	if !checkPassword(w, r) {
-		return
-	}
-
 	err := generateForm(w, "Shorten URL", "s", [][]string{{"url", r.FormValue("url")}, {"slug", r.FormValue("slug")}})
 	if err != nil {
 		http.Error(w, err.Error(), http.StatusInternalServerError)
@@ -94,12 +101,6 @@ func ShortenFormHandler(w http.ResponseWriter, r *http.Request) {
 }
 
 func UpdateFormHandler(w http.ResponseWriter, r *http.Request) {
-	_ = r.ParseForm()
-
-	if !checkPassword(w, r) {
-		return
-	}
-
 	err := generateForm(w, "Update short link", "u", [][]string{{"slug", r.FormValue("slug")}, {"new", r.FormValue("new")}})
 	if err != nil {
 		http.Error(w, err.Error(), http.StatusInternalServerError)
@@ -107,12 +108,6 @@ func UpdateFormHandler(w http.ResponseWriter, r *http.Request) {
 }
 
 func DeleteFormHandler(w http.ResponseWriter, r *http.Request) {
-	_ = r.ParseForm()
-
-	if !checkPassword(w, r) {
-		return
-	}
-
 	err := generateForm(w, "Delete short link", "d", [][]string{{"slug", r.FormValue("slug")}})
 	if err != nil {
 		http.Error(w, err.Error(), http.StatusInternalServerError)
@@ -140,12 +135,6 @@ func generateForm(w http.ResponseWriter, title string, url string, fields [][]st
 }
 
 func ShortenHandler(w http.ResponseWriter, r *http.Request) {
-	_ = r.ParseForm()
-
-	if !checkPassword(w, r) {
-		return
-	}
-
 	writeShortenedUrl := func(w http.ResponseWriter, slug string) {
 		_, _ = w.Write([]byte(viper.GetString("shortUrl") + "/" + slug))
 	}
@@ -197,12 +186,6 @@ func ShortenHandler(w http.ResponseWriter, r *http.Request) {
 }
 
 func UpdateHandler(w http.ResponseWriter, r *http.Request) {
-	_ = r.ParseForm()
-
-	if !checkPassword(w, r) {
-		return
-	}
-
 	slug := r.FormValue("slug")
 	if slug == "" {
 		http.Error(w, "Specify the slug to update", http.StatusBadRequest)
@@ -231,12 +214,6 @@ func UpdateHandler(w http.ResponseWriter, r *http.Request) {
 }
 
 func DeleteHandler(w http.ResponseWriter, r *http.Request) {
-	_ = r.ParseForm()
-
-	if !checkPassword(w, r) {
-		return
-	}
-
 	slug := r.FormValue("slug")
 	if slug == "" {
 		http.Error(w, "Specify the slug to delete", http.StatusBadRequest)
@@ -256,6 +233,39 @@ func DeleteHandler(w http.ResponseWriter, r *http.Request) {
 
 	w.WriteHeader(http.StatusAccepted)
 	_, _ = w.Write([]byte("Slug deleted"))
+}
+
+func ListHandler(w http.ResponseWriter, r *http.Request) {
+	type row struct {
+		Slug string
+		Url  string
+		Hits int
+	}
+	var list []row
+	rows, err := db.Query("SELECT slug, url, hits FROM redirect")
+	if err != nil {
+		http.Error(w, err.Error(), http.StatusInternalServerError)
+		return
+	}
+	for rows.Next() {
+		var r row
+		err = rows.Scan(&r.Slug, &r.Url, &r.Hits)
+		if err != nil {
+			http.Error(w, err.Error(), http.StatusInternalServerError)
+			return
+		}
+		list = append(list, r)
+	}
+	tmpl, err := template.New("List").Parse("<!doctype html><html lang=en><meta name=viewport content=\"width=device-width, initial-scale=1.0\"><title>Short URLs</title><h1>Short URLs</h1><table><tr><th>slug</th><th>url</th><th>hits</th></tr>{{range .}}<tr><td>{{.Slug}}</td><td>{{.Url}}</td><td>{{.Hits}}</td></tr>{{end}}</table></html>")
+	if err != nil {
+		http.Error(w, err.Error(), http.StatusInternalServerError)
+		return
+	}
+	err = tmpl.Execute(w, &list)
+	if err != nil {
+		http.Error(w, err.Error(), http.StatusInternalServerError)
+		return
+	}
 }
 
 func checkPassword(w http.ResponseWriter, r *http.Request) bool {
