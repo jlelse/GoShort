@@ -82,7 +82,7 @@ func migrateDatabase() {
 		Migrations: []*migrate.Migration{
 			{
 				Id:   "001",
-				Up:   []string{"create table redirect(slug text not null primary key,url text not null,hits integer default 0 not null);insert into redirect (slug, url) values ('source', 'https://codeberg.org/jlelse/GoShort');"},
+				Up:   []string{"create table redirect(slug text not null primary key,url text not null,hits integer default 0 not null);insert into redirect (slug, url) values ('source', 'https://git.jlel.se/jlelse/GoShort');"},
 				Down: []string{"drop table redirect;"},
 			},
 		},

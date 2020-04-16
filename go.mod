@@ -1,4 +1,4 @@
-module codeberg.org/jlelse/goshort
+module git.jlel.se/jlelse/GoShort
 
 go 1.14
 

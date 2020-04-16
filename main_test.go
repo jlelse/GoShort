@@ -66,7 +66,7 @@ func TestShortenedUrlHandler(t *testing.T) {
 			w := httptest.NewRecorder()
 			ShortenedUrlHandler(w, req)
 			resp := w.Result()
-			if resp.Header.Get("Location") != "https://codeberg.org/jlelse/GoShort" {
+			if resp.Header.Get("Location") != "https://git.jlel.se/jlelse/GoShort" {
 				t.Error()
 			}
 		})
