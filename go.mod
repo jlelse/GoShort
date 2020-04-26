@@ -1,4 +1,4 @@
-module git.jlel.se/jlelse/GoShort
+module git.jlel.se/jlelse/goshort
 
 go 1.14
 
