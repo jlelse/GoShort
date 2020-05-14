@@ -2,14 +2,14 @@ package main
 
 import (
 	"database/sql"
+	"fmt"
 	"github.com/gorilla/mux"
 	_ "github.com/mattn/go-sqlite3"
-	"github.com/rubenv/sql-migrate"
 	"github.com/spf13/viper"
-	"html/template"
 	"log"
 	"math/rand"
 	"net/http"
+	"strconv"
 	"time"
 )
 
@@ -19,6 +19,7 @@ func main() {
 	rand.Seed(time.Now().UTC().UnixNano())
 
 	viper.SetDefault("dbPath", "data/goshort.db")
+	viper.SetDefault("port", 8080)
 
 	viper.SetConfigName("config")
 	viper.AddConfigPath("./config")
@@ -54,7 +55,10 @@ func main() {
 	admin := r.NewRoute().Subrouter()
 	admin.HandleFunc("/s", ShortenFormHandler).Methods(http.MethodGet)
 	admin.HandleFunc("/s", ShortenHandler).Methods(http.MethodPost)
+	admin.HandleFunc("/t", ShortenTextFormHandler).Methods(http.MethodGet)
+	admin.HandleFunc("/t", ShortenTextHandler).Methods(http.MethodPost)
 	admin.HandleFunc("/u", UpdateFormHandler).Methods(http.MethodGet)
+	admin.HandleFunc("/ut", UpdateTextFormHandler).Methods(http.MethodGet)
 	admin.HandleFunc("/u", UpdateHandler).Methods(http.MethodPost)
 	admin.HandleFunc("/d", DeleteFormHandler).Methods(http.MethodGet)
 	admin.HandleFunc("/d", DeleteHandler).Methods(http.MethodPost)
@@ -63,8 +67,9 @@ func main() {
 	r.HandleFunc("/{slug}", ShortenedUrlHandler)
 	r.HandleFunc("/", CatchAllHandler)
 
-	http.Handle("/", r)
-	log.Fatal(http.ListenAndServe(":8080", nil))
+	addr := ":" + strconv.Itoa(viper.GetInt("port"))
+	fmt.Println("Listening to " + addr)
+	log.Fatal(http.ListenAndServe(addr, r))
 }
 
 func loginMiddleware(next http.Handler) http.Handler {
@@ -77,49 +82,43 @@ func loginMiddleware(next http.Handler) http.Handler {
 	})
 }
 
-func migrateDatabase() {
-	migrations := &migrate.MemoryMigrationSource{
-		Migrations: []*migrate.Migration{
-			{
-				Id:   "001",
-				Up:   []string{"create table redirect(slug text not null primary key,url text not null,hits integer default 0 not null);insert into redirect (slug, url) values ('source', 'https://git.jlel.se/jlelse/GoShort');"},
-				Down: []string{"drop table redirect;"},
-			},
-		},
-	}
-	_, err := migrate.Exec(db, "sqlite3", migrations, migrate.Up)
-	if err != nil {
-		log.Fatal(err)
-	}
-}
-
 func ShortenFormHandler(w http.ResponseWriter, r *http.Request) {
-	err := generateForm(w, "Shorten URL", "s", [][]string{{"url", r.FormValue("url")}, {"slug", r.FormValue("slug")}})
+	err := generateURLForm(w, "Shorten URL", "s", [][]string{{"url", r.FormValue("url")}, {"slug", r.FormValue("slug")}})
 	if err != nil {
 		http.Error(w, err.Error(), http.StatusInternalServerError)
 	}
 }
 
 func UpdateFormHandler(w http.ResponseWriter, r *http.Request) {
-	err := generateForm(w, "Update short link", "u", [][]string{{"slug", r.FormValue("slug")}, {"new", r.FormValue("new")}})
+	err := generateURLForm(w, "Update short link", "u", [][]string{{"slug", r.FormValue("slug")}, {"type", "url"}, {"new", r.FormValue("new")}})
+	if err != nil {
+		http.Error(w, err.Error(), http.StatusInternalServerError)
+	}
+}
+
+func UpdateTextFormHandler(w http.ResponseWriter, r *http.Request) {
+	err := generateTextForm(w, "Update text", "u", [][]string{{"slug", r.FormValue("slug")}, {"type", "text"}}, [][]string{{"new", r.FormValue("new")}})
 	if err != nil {
 		http.Error(w, err.Error(), http.StatusInternalServerError)
 	}
 }
 
 func DeleteFormHandler(w http.ResponseWriter, r *http.Request) {
-	err := generateForm(w, "Delete short link", "d", [][]string{{"slug", r.FormValue("slug")}})
+	err := generateURLForm(w, "Delete short link", "d", [][]string{{"slug", r.FormValue("slug")}})
 	if err != nil {
 		http.Error(w, err.Error(), http.StatusInternalServerError)
 	}
 }
 
-func generateForm(w http.ResponseWriter, title string, url string, fields [][]string) error {
-	tmpl, err := template.New("Form").Parse("<!doctype html><html lang=en><meta name=viewport content=\"width=device-width, initial-scale=1.0\"><title>{{.Title}}</title><h1>{{.Title}}</h1><form action={{.Url}} method=post>{{range .Fields}}<input type=text name={{index . 0}} placeholder={{index . 0}} value=\"{{index . 1}}\"><br><br>{{end}}<input type=submit value={{.Title}}></form></html>")
+func ShortenTextFormHandler(w http.ResponseWriter, r *http.Request) {
+	err := generateTextForm(w, "Save text", "t", [][]string{{"slug", r.FormValue("slug")}}, [][]string{{"text", r.FormValue("text")}})
 	if err != nil {
-		return err
+		http.Error(w, err.Error(), http.StatusInternalServerError)
 	}
-	err = tmpl.Execute(w, &struct {
+}
+
+func generateURLForm(w http.ResponseWriter, title string, url string, fields [][]string) error {
+	err := urlFormTemplate.Execute(w, &struct {
 		Title  string
 		Url    string
 		Fields [][]string
@@ -127,6 +126,24 @@ func generateForm(w http.ResponseWriter, title string, url string, fields [][]st
 		Title:  title,
 		Url:    url,
 		Fields: fields,
+	})
+	if err != nil {
+		return err
+	}
+	return nil
+}
+
+func generateTextForm(w http.ResponseWriter, title string, url string, fields [][]string, textAreas [][]string) error {
+	err := textFormTemplate.Execute(w, &struct {
+		Title     string
+		Url       string
+		Fields    [][]string
+		TextAreas [][]string
+	}{
+		Title:     title,
+		Url:       url,
+		Fields:    fields,
+		TextAreas: textAreas,
 	})
 	if err != nil {
 		return err
@@ -185,6 +202,57 @@ func ShortenHandler(w http.ResponseWriter, r *http.Request) {
 	writeShortenedUrl(w, slug)
 }
 
+func ShortenTextHandler(w http.ResponseWriter, r *http.Request) {
+	writeShortenedUrl := func(w http.ResponseWriter, slug string) {
+		_, _ = w.Write([]byte(viper.GetString("shortUrl") + "/" + slug))
+	}
+
+	requestText := r.FormValue("text")
+	if requestText == "" {
+		http.Error(w, "text parameter not set", http.StatusBadRequest)
+		return
+	}
+
+	slug := r.FormValue("slug")
+	manualSlug := false
+	if slug == "" {
+		_ = db.QueryRow("SELECT slug FROM redirect WHERE url = ? and type = 'text'", requestText).Scan(&slug)
+	} else {
+		manualSlug = true
+	}
+
+	if slug != "" {
+		if _, e := slugExists(slug); e {
+			if manualSlug {
+				http.Error(w, "slug already in use", http.StatusBadRequest)
+				return
+			}
+			writeShortenedUrl(w, slug)
+			return
+		}
+	} else {
+		var exists = true
+		for exists == true {
+			slug = generateSlug()
+			var err error
+			err, exists = slugExists(slug)
+			if err != nil {
+				http.Error(w, err.Error(), http.StatusInternalServerError)
+				return
+			}
+		}
+	}
+
+	_, err := db.Exec("INSERT INTO redirect (slug, url, type) VALUES (?, ?, 'text')", slug, requestText)
+	if err != nil {
+		http.Error(w, err.Error(), http.StatusInternalServerError)
+		return
+	}
+
+	w.WriteHeader(http.StatusCreated)
+	writeShortenedUrl(w, slug)
+}
+
 func UpdateHandler(w http.ResponseWriter, r *http.Request) {
 	slug := r.FormValue("slug")
 	if slug == "" {
@@ -198,12 +266,17 @@ func UpdateHandler(w http.ResponseWriter, r *http.Request) {
 		return
 	}
 
+	typeString := r.FormValue("type")
+	if typeString == "" {
+		typeString = "url"
+	}
+
 	if err, e := slugExists(slug); !e || err != nil {
 		http.Error(w, "Slug not found", http.StatusNotFound)
 		return
 	}
 
-	_, err := db.Exec("UPDATE redirect SET url = ? WHERE slug = ?", newUrl, slug)
+	_, err := db.Exec("UPDATE redirect SET url = ?, type = ? WHERE slug = ?", newUrl, typeString, slug)
 	if err != nil {
 		http.Error(w, err.Error(), http.StatusInternalServerError)
 		return
@@ -256,12 +329,7 @@ func ListHandler(w http.ResponseWriter, r *http.Request) {
 		}
 		list = append(list, r)
 	}
-	tmpl, err := template.New("List").Parse("<!doctype html><html lang=en><meta name=viewport content=\"width=device-width, initial-scale=1.0\"><title>Short URLs</title><h1>Short URLs</h1><table><tr><th>slug</th><th>url</th><th>hits</th></tr>{{range .}}<tr><td>{{.Slug}}</td><td>{{.Url}}</td><td>{{.Hits}}</td></tr>{{end}}</table></html>")
-	if err != nil {
-		http.Error(w, err.Error(), http.StatusInternalServerError)
-		return
-	}
-	err = tmpl.Execute(w, &list)
+	err = listTemplate.Execute(w, &list)
 	if err != nil {
 		http.Error(w, err.Error(), http.StatusInternalServerError)
 		return
@@ -307,7 +375,8 @@ func ShortenedUrlHandler(w http.ResponseWriter, r *http.Request) {
 	}
 
 	var redirectUrl string
-	err := db.QueryRow("SELECT url FROM redirect WHERE slug = ?", slug).Scan(&redirectUrl)
+	var typeString string
+	err := db.QueryRow("SELECT url, type FROM redirect WHERE slug = ?", slug).Scan(&redirectUrl, &typeString)
 	if err != nil {
 		http.NotFound(w, r)
 		return
@@ -317,7 +386,11 @@ func ShortenedUrlHandler(w http.ResponseWriter, r *http.Request) {
 		_, _ = db.Exec("UPDATE redirect SET hits = hits + 1 WHERE slug = ?", slug)
 	}()
 
-	http.Redirect(w, r, redirectUrl, http.StatusTemporaryRedirect)
+	if typeString == "text" {
+		_, _ = w.Write([]byte(redirectUrl))
+	} else {
+		http.Redirect(w, r, redirectUrl, http.StatusTemporaryRedirect)
+	}
 }
 
 func CatchAllHandler(w http.ResponseWriter, r *http.Request) {
