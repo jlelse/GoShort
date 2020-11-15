@@ -35,8 +35,8 @@ func initRouter() {
 	appRouter.With(loginMiddleware).Get("/d", deleteFormHandler)
 	appRouter.With(loginMiddleware).Post("/d", deleteHandler)
 	appRouter.With(loginMiddleware).Get("/l", listHandler)
-	appRouter.HandleFunc("/{slug}", shortenedURLHandler)
-	appRouter.NotFound(catchAllHandler)
+	appRouter.Get("/{slug}", shortenedURLHandler)
+	appRouter.Get("/", defaultURLRedirectHandler)
 }
 
 func main() {
@@ -274,7 +274,7 @@ func updateHandler(w http.ResponseWriter, r *http.Request) {
 	}
 
 	if e, err := slugExists(slug); err != nil || !e {
-		http.Error(w, "Slug not found", http.StatusNotFound)
+		http.NotFound(w, r)
 		return
 	}
 
@@ -300,7 +300,7 @@ func deleteHandler(w http.ResponseWriter, r *http.Request) {
 	}
 
 	if e, err := slugExists(slug); !e || err != nil {
-		http.Error(w, "Slug not found", http.StatusNotFound)
+		http.NotFound(w, r)
 		return
 	}
 
@@ -374,10 +374,6 @@ func slugExists(slug string) (exists bool, err error) {
 
 func shortenedURLHandler(w http.ResponseWriter, r *http.Request) {
 	slug := chi.URLParam(r, "slug")
-	if slug == "" {
-		catchAllHandler(w, r)
-		return
-	}
 
 	var redirectURL, typeString string
 	err := appDb.QueryRow("SELECT url, type FROM redirect WHERE slug = ?", slug).Scan(&redirectURL, &typeString)
@@ -399,6 +395,6 @@ func shortenedURLHandler(w http.ResponseWriter, r *http.Request) {
 	}
 }
 
-func catchAllHandler(w http.ResponseWriter, r *http.Request) {
+func defaultURLRedirectHandler(w http.ResponseWriter, r *http.Request) {
 	http.Redirect(w, r, viper.GetString("defaultUrl"), http.StatusTemporaryRedirect)
 }
