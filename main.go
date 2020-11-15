@@ -3,17 +3,41 @@ package main
 import (
 	"database/sql"
 	"fmt"
-	"github.com/gorilla/mux"
-	_ "github.com/mattn/go-sqlite3"
-	"github.com/spf13/viper"
 	"log"
 	"math/rand"
 	"net/http"
 	"strconv"
+	"sync"
 	"time"
+
+	"github.com/go-chi/chi"
+	"github.com/go-chi/chi/middleware"
+	_ "github.com/mattn/go-sqlite3"
+	"github.com/spf13/viper"
 )
 
-var db *sql.DB
+var (
+	appDb       *sql.DB
+	appRouter   *chi.Mux
+	dbWriteLock *sync.Mutex = &sync.Mutex{}
+)
+
+func initRouter() {
+	appRouter = chi.NewRouter()
+	appRouter.Use(middleware.GetHead)
+	appRouter.With(loginMiddleware).Get("/s", shortenFormHandler)
+	appRouter.With(loginMiddleware).Post("/s", shortenHandler)
+	appRouter.With(loginMiddleware).Get("/t", shortenTextFormHandler)
+	appRouter.With(loginMiddleware).Post("/t", shortenTextHandler)
+	appRouter.With(loginMiddleware).Get("/u", updateFormHandler)
+	appRouter.With(loginMiddleware).Get("/ut", updateTextFormHandler)
+	appRouter.With(loginMiddleware).Post("/u", updateHandler)
+	appRouter.With(loginMiddleware).Get("/d", deleteFormHandler)
+	appRouter.With(loginMiddleware).Post("/d", deleteHandler)
+	appRouter.With(loginMiddleware).Get("/l", listHandler)
+	appRouter.HandleFunc("/{slug}", shortenedURLHandler)
+	appRouter.NotFound(catchAllHandler)
+}
 
 func main() {
 	rand.Seed(time.Now().UTC().UnixNano())
@@ -40,7 +64,7 @@ func main() {
 	}
 
 	var err error
-	db, err = sql.Open("sqlite3", viper.GetString("dbPath"))
+	appDb, err = sql.Open("sqlite3", viper.GetString("dbPath")+"?cache=shared&mode=rwc&_journal_mode=WAL")
 	if err != nil {
 		log.Fatal(err)
 	}
@@ -48,33 +72,18 @@ func main() {
 	migrateDatabase()
 
 	defer func() {
-		_ = db.Close()
+		_ = appDb.Close()
 	}()
 
-	r := mux.NewRouter()
-	admin := r.NewRoute().Subrouter()
-	admin.HandleFunc("/s", ShortenFormHandler).Methods(http.MethodGet)
-	admin.HandleFunc("/s", ShortenHandler).Methods(http.MethodPost)
-	admin.HandleFunc("/t", ShortenTextFormHandler).Methods(http.MethodGet)
-	admin.HandleFunc("/t", ShortenTextHandler).Methods(http.MethodPost)
-	admin.HandleFunc("/u", UpdateFormHandler).Methods(http.MethodGet)
-	admin.HandleFunc("/ut", UpdateTextFormHandler).Methods(http.MethodGet)
-	admin.HandleFunc("/u", UpdateHandler).Methods(http.MethodPost)
-	admin.HandleFunc("/d", DeleteFormHandler).Methods(http.MethodGet)
-	admin.HandleFunc("/d", DeleteHandler).Methods(http.MethodPost)
-	admin.HandleFunc("/l", ListHandler).Methods(http.MethodGet)
-	admin.Use(loginMiddleware)
-	r.HandleFunc("/{slug}", ShortenedUrlHandler)
-	r.HandleFunc("/", CatchAllHandler)
+	initRouter()
 
 	addr := ":" + strconv.Itoa(viper.GetInt("port"))
 	fmt.Println("Listening to " + addr)
-	log.Fatal(http.ListenAndServe(addr, r))
+	log.Fatal(http.ListenAndServe(addr, appRouter))
 }
 
 func loginMiddleware(next http.Handler) http.Handler {
 	return http.HandlerFunc(func(w http.ResponseWriter, r *http.Request) {
-		_ = r.ParseForm()
 		if !checkPassword(w, r) {
 			return
 		}
@@ -82,35 +91,35 @@ func loginMiddleware(next http.Handler) http.Handler {
 	})
 }
 
-func ShortenFormHandler(w http.ResponseWriter, r *http.Request) {
+func shortenFormHandler(w http.ResponseWriter, r *http.Request) {
 	err := generateURLForm(w, "Shorten URL", "s", [][]string{{"url", r.FormValue("url")}, {"slug", r.FormValue("slug")}})
 	if err != nil {
 		http.Error(w, err.Error(), http.StatusInternalServerError)
 	}
 }
 
-func UpdateFormHandler(w http.ResponseWriter, r *http.Request) {
+func updateFormHandler(w http.ResponseWriter, r *http.Request) {
 	err := generateURLForm(w, "Update short link", "u", [][]string{{"slug", r.FormValue("slug")}, {"type", "url"}, {"new", r.FormValue("new")}})
 	if err != nil {
 		http.Error(w, err.Error(), http.StatusInternalServerError)
 	}
 }
 
-func UpdateTextFormHandler(w http.ResponseWriter, r *http.Request) {
+func updateTextFormHandler(w http.ResponseWriter, r *http.Request) {
 	err := generateTextForm(w, "Update text", "u", [][]string{{"slug", r.FormValue("slug")}, {"type", "text"}}, [][]string{{"new", r.FormValue("new")}})
 	if err != nil {
 		http.Error(w, err.Error(), http.StatusInternalServerError)
 	}
 }
 
-func DeleteFormHandler(w http.ResponseWriter, r *http.Request) {
+func deleteFormHandler(w http.ResponseWriter, r *http.Request) {
 	err := generateURLForm(w, "Delete short link", "d", [][]string{{"slug", r.FormValue("slug")}})
 	if err != nil {
 		http.Error(w, err.Error(), http.StatusInternalServerError)
 	}
 }
 
-func ShortenTextFormHandler(w http.ResponseWriter, r *http.Request) {
+func shortenTextFormHandler(w http.ResponseWriter, r *http.Request) {
 	err := generateTextForm(w, "Save text", "t", [][]string{{"slug", r.FormValue("slug")}}, [][]string{{"text", r.FormValue("text")}})
 	if err != nil {
 		http.Error(w, err.Error(), http.StatusInternalServerError)
@@ -118,65 +127,50 @@ func ShortenTextFormHandler(w http.ResponseWriter, r *http.Request) {
 }
 
 func generateURLForm(w http.ResponseWriter, title string, url string, fields [][]string) error {
-	err := urlFormTemplate.Execute(w, &struct {
-		Title  string
-		Url    string
-		Fields [][]string
-	}{
-		Title:  title,
-		Url:    url,
-		Fields: fields,
+	return urlFormTemplate.Execute(w, map[string]interface{}{
+		"Title":  title,
+		"URL":    url,
+		"Fields": fields,
 	})
-	if err != nil {
-		return err
-	}
-	return nil
 }
 
 func generateTextForm(w http.ResponseWriter, title string, url string, fields [][]string, textAreas [][]string) error {
-	err := textFormTemplate.Execute(w, &struct {
-		Title     string
-		Url       string
-		Fields    [][]string
-		TextAreas [][]string
-	}{
-		Title:     title,
-		Url:       url,
-		Fields:    fields,
-		TextAreas: textAreas,
+	return textFormTemplate.Execute(w, map[string]interface{}{
+		"Title":     title,
+		"URL":       url,
+		"Fields":    fields,
+		"TextAreas": textAreas,
 	})
-	if err != nil {
-		return err
-	}
-	return nil
 }
 
-func ShortenHandler(w http.ResponseWriter, r *http.Request) {
-	writeShortenedUrl := func(w http.ResponseWriter, slug string) {
+func shortenHandler(w http.ResponseWriter, r *http.Request) {
+	writeShortenedURL := func(w http.ResponseWriter, slug string) {
 		_, _ = w.Write([]byte(viper.GetString("shortUrl") + "/" + slug))
 	}
 
-	requestUrl := r.FormValue("url")
-	if requestUrl == "" {
+	_ = r.ParseForm()
+
+	requestURL := r.Form.Get("url")
+	if requestURL == "" {
 		http.Error(w, "url parameter not set", http.StatusBadRequest)
 		return
 	}
 
-	slug := r.FormValue("slug")
+	slug := r.Form.Get("slug")
 	manualSlug := false
 	if slug == "" {
-		_ = db.QueryRow("SELECT slug FROM redirect WHERE url = ?", requestUrl).Scan(&slug)
+		_ = appDb.QueryRow("SELECT slug FROM redirect WHERE url = ?", requestURL).Scan(&slug)
 	} else {
 		manualSlug = true
 	}
 
 	if slug != "" {
-		if _, e := slugExists(slug); e {
+		if e, _ := slugExists(slug); e {
 			if manualSlug {
 				http.Error(w, "slug already in use", http.StatusBadRequest)
 				return
 			}
-			writeShortenedUrl(w, slug)
+			writeShortenedURL(w, slug)
 			return
 		}
 	} else {
@@ -184,7 +178,7 @@ func ShortenHandler(w http.ResponseWriter, r *http.Request) {
 		for exists == true {
 			slug = generateSlug()
 			var err error
-			err, exists = slugExists(slug)
+			exists, err = slugExists(slug)
 			if err != nil {
 				http.Error(w, err.Error(), http.StatusInternalServerError)
 				return
@@ -192,42 +186,46 @@ func ShortenHandler(w http.ResponseWriter, r *http.Request) {
 		}
 	}
 
-	_, err := db.Exec("INSERT INTO redirect (slug, url) VALUES (?, ?)", slug, requestUrl)
-	if err != nil {
+	dbWriteLock.Lock()
+	if _, err := appDb.Exec("INSERT INTO redirect (slug, url) VALUES (?, ?)", slug, requestURL); err != nil {
+		dbWriteLock.Unlock()
 		http.Error(w, err.Error(), http.StatusInternalServerError)
 		return
 	}
+	dbWriteLock.Unlock()
 
 	w.WriteHeader(http.StatusCreated)
-	writeShortenedUrl(w, slug)
+	writeShortenedURL(w, slug)
 }
 
-func ShortenTextHandler(w http.ResponseWriter, r *http.Request) {
-	writeShortenedUrl := func(w http.ResponseWriter, slug string) {
+func shortenTextHandler(w http.ResponseWriter, r *http.Request) {
+	writeShortenedURL := func(w http.ResponseWriter, slug string) {
 		_, _ = w.Write([]byte(viper.GetString("shortUrl") + "/" + slug))
 	}
 
-	requestText := r.FormValue("text")
+	_ = r.ParseForm()
+
+	requestText := r.Form.Get("text")
 	if requestText == "" {
 		http.Error(w, "text parameter not set", http.StatusBadRequest)
 		return
 	}
 
-	slug := r.FormValue("slug")
+	slug := r.Form.Get("slug")
 	manualSlug := false
 	if slug == "" {
-		_ = db.QueryRow("SELECT slug FROM redirect WHERE url = ? and type = 'text'", requestText).Scan(&slug)
+		_ = appDb.QueryRow("SELECT slug FROM redirect WHERE url = ? and type = 'text'", requestText).Scan(&slug)
 	} else {
 		manualSlug = true
 	}
 
 	if slug != "" {
-		if _, e := slugExists(slug); e {
+		if e, _ := slugExists(slug); e {
 			if manualSlug {
 				http.Error(w, "slug already in use", http.StatusBadRequest)
 				return
 			}
-			writeShortenedUrl(w, slug)
+			writeShortenedURL(w, slug)
 			return
 		}
 	} else {
@@ -235,7 +233,7 @@ func ShortenTextHandler(w http.ResponseWriter, r *http.Request) {
 		for exists == true {
 			slug = generateSlug()
 			var err error
-			err, exists = slugExists(slug)
+			exists, err = slugExists(slug)
 			if err != nil {
 				http.Error(w, err.Error(), http.StatusInternalServerError)
 				return
@@ -243,86 +241,96 @@ func ShortenTextHandler(w http.ResponseWriter, r *http.Request) {
 		}
 	}
 
-	_, err := db.Exec("INSERT INTO redirect (slug, url, type) VALUES (?, ?, 'text')", slug, requestText)
-	if err != nil {
+	dbWriteLock.Lock()
+	if _, err := appDb.Exec("INSERT INTO redirect (slug, url, type) VALUES (?, ?, 'text')", slug, requestText); err != nil {
+		dbWriteLock.Unlock()
 		http.Error(w, err.Error(), http.StatusInternalServerError)
 		return
 	}
+	dbWriteLock.Unlock()
 
 	w.WriteHeader(http.StatusCreated)
-	writeShortenedUrl(w, slug)
+	writeShortenedURL(w, slug)
 }
 
-func UpdateHandler(w http.ResponseWriter, r *http.Request) {
-	slug := r.FormValue("slug")
+func updateHandler(w http.ResponseWriter, r *http.Request) {
+	_ = r.ParseForm()
+
+	slug := r.Form.Get("slug")
 	if slug == "" {
 		http.Error(w, "Specify the slug to update", http.StatusBadRequest)
 		return
 	}
 
-	newUrl := r.FormValue("new")
-	if newUrl == "" {
+	newURL := r.Form.Get("new")
+	if newURL == "" {
 		http.Error(w, "Specify the new URL", http.StatusBadRequest)
 		return
 	}
 
-	typeString := r.FormValue("type")
+	typeString := r.Form.Get("type")
 	if typeString == "" {
 		typeString = "url"
 	}
 
-	if err, e := slugExists(slug); !e || err != nil {
+	if e, err := slugExists(slug); err != nil || !e {
 		http.Error(w, "Slug not found", http.StatusNotFound)
 		return
 	}
 
-	_, err := db.Exec("UPDATE redirect SET url = ?, type = ? WHERE slug = ?", newUrl, typeString, slug)
-	if err != nil {
+	dbWriteLock.Lock()
+	if _, err := appDb.Exec("UPDATE redirect SET url = ?, type = ? WHERE slug = ?", newURL, typeString, slug); err != nil {
+		dbWriteLock.Unlock()
 		http.Error(w, err.Error(), http.StatusInternalServerError)
 		return
 	}
+	dbWriteLock.Unlock()
 
 	w.WriteHeader(http.StatusAccepted)
 	_, _ = w.Write([]byte("Slug updated"))
 }
 
-func DeleteHandler(w http.ResponseWriter, r *http.Request) {
-	slug := r.FormValue("slug")
+func deleteHandler(w http.ResponseWriter, r *http.Request) {
+	_ = r.ParseForm()
+
+	slug := r.Form.Get("slug")
 	if slug == "" {
 		http.Error(w, "Specify the slug to delete", http.StatusBadRequest)
 		return
 	}
 
-	if err, e := slugExists(slug); !e || err != nil {
+	if e, err := slugExists(slug); !e || err != nil {
 		http.Error(w, "Slug not found", http.StatusNotFound)
 		return
 	}
 
-	_, err := db.Exec("DELETE FROM redirect WHERE slug = ?", slug)
-	if err != nil {
+	dbWriteLock.Lock()
+	if _, err := appDb.Exec("DELETE FROM redirect WHERE slug = ?", slug); err != nil {
+		dbWriteLock.Unlock()
 		http.Error(w, err.Error(), http.StatusInternalServerError)
 		return
 	}
+	dbWriteLock.Unlock()
 
 	w.WriteHeader(http.StatusAccepted)
 	_, _ = w.Write([]byte("Slug deleted"))
 }
 
-func ListHandler(w http.ResponseWriter, r *http.Request) {
+func listHandler(w http.ResponseWriter, r *http.Request) {
 	type row struct {
 		Slug string
-		Url  string
+		URL  string
 		Hits int
 	}
 	var list []row
-	rows, err := db.Query("SELECT slug, url, hits FROM redirect")
+	rows, err := appDb.Query("SELECT slug, url, hits FROM redirect")
 	if err != nil {
 		http.Error(w, err.Error(), http.StatusInternalServerError)
 		return
 	}
 	for rows.Next() {
 		var r row
-		err = rows.Scan(&r.Slug, &r.Url, &r.Hits)
+		err = rows.Scan(&r.Slug, &r.URL, &r.Hits)
 		if err != nil {
 			http.Error(w, err.Error(), http.StatusInternalServerError)
 			return
@@ -337,7 +345,8 @@ func ListHandler(w http.ResponseWriter, r *http.Request) {
 }
 
 func checkPassword(w http.ResponseWriter, r *http.Request) bool {
-	if r.FormValue("password") == viper.GetString("password") {
+	_ = r.ParseForm()
+	if r.Form.Get("password") == viper.GetString("password") {
 		return true
 	}
 	_, pass, ok := r.BasicAuth()
@@ -358,41 +367,38 @@ func generateSlug() string {
 	return string(s)
 }
 
-func slugExists(slug string) (e error, exists bool) {
-	err := db.QueryRow("SELECT EXISTS(SELECT * FROM redirect WHERE slug = ?)", slug).Scan(&exists)
-	if err != nil {
-		return err, false
-	}
-
-	return nil, exists
+func slugExists(slug string) (exists bool, err error) {
+	err = appDb.QueryRow("SELECT EXISTS(SELECT 1 FROM redirect WHERE slug = ?)", slug).Scan(&exists)
+	return
 }
 
-func ShortenedUrlHandler(w http.ResponseWriter, r *http.Request) {
-	slug, ok := mux.Vars(r)["slug"]
-	if !ok {
-		CatchAllHandler(w, r)
+func shortenedURLHandler(w http.ResponseWriter, r *http.Request) {
+	slug := chi.URLParam(r, "slug")
+	if slug == "" {
+		catchAllHandler(w, r)
 		return
 	}
 
-	var redirectUrl string
-	var typeString string
-	err := db.QueryRow("SELECT url, type FROM redirect WHERE slug = ?", slug).Scan(&redirectUrl, &typeString)
+	var redirectURL, typeString string
+	err := appDb.QueryRow("SELECT url, type FROM redirect WHERE slug = ?", slug).Scan(&redirectURL, &typeString)
 	if err != nil {
 		http.NotFound(w, r)
 		return
 	}
 
 	go func() {
-		_, _ = db.Exec("UPDATE redirect SET hits = hits + 1 WHERE slug = ?", slug)
+		dbWriteLock.Lock()
+		_, _ = appDb.Exec("UPDATE redirect SET hits = hits + 1 WHERE slug = ?", slug)
+		dbWriteLock.Unlock()
 	}()
 
 	if typeString == "text" {
-		_, _ = w.Write([]byte(redirectUrl))
+		_, _ = w.Write([]byte(redirectURL))
 	} else {
-		http.Redirect(w, r, redirectUrl, http.StatusTemporaryRedirect)
+		http.Redirect(w, r, redirectURL, http.StatusTemporaryRedirect)
 	}
 }
 
-func CatchAllHandler(w http.ResponseWriter, r *http.Request) {
+func catchAllHandler(w http.ResponseWriter, r *http.Request) {
 	http.Redirect(w, r, viper.GetString("defaultUrl"), http.StatusTemporaryRedirect)
 }

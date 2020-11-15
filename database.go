@@ -1,32 +1,37 @@
 package main
 
 import (
-	migrate "github.com/rubenv/sql-migrate"
+	"database/sql"
 	"log"
+
+	"github.com/lopezator/migrator"
 )
 
 func migrateDatabase() {
-	migrations := &migrate.MemoryMigrationSource{
-		Migrations: []*migrate.Migration{
-			{
-				Id:   "001",
-				Up:   []string{"create table redirect(slug text not null primary key,url text not null,hits integer default 0 not null);insert into redirect (slug, url) values ('source', 'https://git.jlel.se/jlelse/GoShort');"},
-				Down: []string{"drop table redirect;"},
+	dbWriteLock.Lock()
+	defer dbWriteLock.Unlock()
+	m, err := migrator.New(
+		migrator.Migrations(
+			&migrator.Migration{
+				Name: "00001",
+				Func: func(tx *sql.Tx) error {
+					_, err := tx.Exec(`
+					drop table if exists gorp_migrations;
+					create table if not exists redirect(slug text not null primary key, url text not null, type text not null default 'url', hits integer default 0 not null);
+					insert or replace into redirect (slug, url) values ('source', 'https://git.jlel.se/jlelse/GoShort');
+					`)
+					return err
+				},
 			},
-			{
-				Id:   "002",
-				Up:   []string{"update redirect set url = 'https://git.jlel.se/jlelse/GoShort' where slug = 'source';"},
-				Down: []string{},
-			},
-			{
-				Id:   "003",
-				Up:   []string{"alter table redirect add column type text not null default 'url';"},
-				Down: []string{},
-			},
-		},
-	}
-	_, err := migrate.Exec(db, "sqlite3", migrations, migrate.Up)
+		),
+	)
 	if err != nil {
-		log.Fatal(err)
+		log.Fatal(err.Error())
+		return
 	}
+	if err := m.Migrate(appDb); err != nil {
+		log.Fatal(err.Error())
+		return
+	}
+	return
 }

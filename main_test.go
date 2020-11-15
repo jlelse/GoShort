@@ -2,16 +2,16 @@ package main
 
 import (
 	"database/sql"
-	"github.com/gorilla/mux"
-	"github.com/spf13/viper"
 	"net/http"
 	"net/http/httptest"
 	"testing"
+
+	"github.com/spf13/viper"
 )
 
 func setupFakeDB(t *testing.T) {
 	var err error
-	db, err = sql.Open("sqlite3", "file::memory:?cache=shared")
+	appDb, err = sql.Open("sqlite3", "file::memory:")
 	if err != nil {
 		t.Fatal(err)
 	}
@@ -19,7 +19,7 @@ func setupFakeDB(t *testing.T) {
 }
 
 func closeFakeDB(t *testing.T) {
-	err := db.Close()
+	err := appDb.Close()
 	if err != nil {
 		t.Fatal(err)
 	}
@@ -28,10 +28,10 @@ func closeFakeDB(t *testing.T) {
 func Test_slugExists(t *testing.T) {
 	t.Run("Test slugs", func(t *testing.T) {
 		setupFakeDB(t)
-		if err, exists := slugExists("source"); exists == false || err != nil {
+		if exists, err := slugExists("source"); err != nil || exists == false {
 			t.Error("Wrong slug existence")
 		}
-		if err, exists := slugExists("test"); exists == true || err != nil {
+		if exists, err := slugExists("test"); err != nil || exists == true {
 			t.Error("Wrong slug existence")
 		}
 		closeFakeDB(t)
@@ -50,11 +50,11 @@ func TestShortenedUrlHandler(t *testing.T) {
 	viper.Set("defaultUrl", "http://long.example.com")
 	t.Run("Test ShortenedUrlHandler", func(t *testing.T) {
 		setupFakeDB(t)
+		initRouter()
 		t.Run("Test redirect code", func(t *testing.T) {
 			req := httptest.NewRequest("GET", "http://example.com/source", nil)
-			req = mux.SetURLVars(req, map[string]string{"slug": "source"})
 			w := httptest.NewRecorder()
-			ShortenedUrlHandler(w, req)
+			appRouter.ServeHTTP(w, req)
 			resp := w.Result()
 			if resp.StatusCode != http.StatusTemporaryRedirect {
 				t.Error()
@@ -62,9 +62,8 @@ func TestShortenedUrlHandler(t *testing.T) {
 		})
 		t.Run("Test redirect location header", func(t *testing.T) {
 			req := httptest.NewRequest("GET", "http://example.com/source", nil)
-			req = mux.SetURLVars(req, map[string]string{"slug": "source"})
 			w := httptest.NewRecorder()
-			ShortenedUrlHandler(w, req)
+			appRouter.ServeHTTP(w, req)
 			resp := w.Result()
 			if resp.Header.Get("Location") != "https://git.jlel.se/jlelse/GoShort" {
 				t.Error()
@@ -72,9 +71,8 @@ func TestShortenedUrlHandler(t *testing.T) {
 		})
 		t.Run("Test missing slug redirect code", func(t *testing.T) {
 			req := httptest.NewRequest("GET", "http://example.com/test", nil)
-			req = mux.SetURLVars(req, map[string]string{"slug": "test"})
 			w := httptest.NewRecorder()
-			ShortenedUrlHandler(w, req)
+			appRouter.ServeHTTP(w, req)
 			resp := w.Result()
 			if resp.StatusCode != http.StatusNotFound {
 				t.Error()
@@ -83,7 +81,7 @@ func TestShortenedUrlHandler(t *testing.T) {
 		t.Run("Test no slug mux var", func(t *testing.T) {
 			req := httptest.NewRequest("GET", "http://example.com/", nil)
 			w := httptest.NewRecorder()
-			ShortenedUrlHandler(w, req)
+			appRouter.ServeHTTP(w, req)
 			resp := w.Result()
 			if resp.StatusCode != http.StatusTemporaryRedirect {
 				t.Error()
