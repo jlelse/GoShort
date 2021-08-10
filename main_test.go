@@ -4,6 +4,7 @@ import (
 	"database/sql"
 	"net/http"
 	"net/http/httptest"
+	"path/filepath"
 	"testing"
 
 	"github.com/spf13/viper"
@@ -13,7 +14,7 @@ import (
 
 func setupFakeDB(t *testing.T) {
 	var err error
-	appDb, err = sql.Open("sqlite3", "file::memory:")
+	appDb, err = sql.Open("sqlite3", filepath.Join(t.TempDir(), "data.db")+"?cache=shared&mode=rwc&_journal_mode=WAL&_busy_timeout=100")
 	if err != nil {
 		t.Fatal(err)
 	}
