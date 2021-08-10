@@ -7,6 +7,8 @@ import (
 	"testing"
 
 	"github.com/spf13/viper"
+	"github.com/stretchr/testify/assert"
+	"github.com/stretchr/testify/require"
 )
 
 func setupFakeDB(t *testing.T) {
@@ -20,29 +22,27 @@ func setupFakeDB(t *testing.T) {
 
 func closeFakeDB(t *testing.T) {
 	err := appDb.Close()
-	if err != nil {
-		t.Fatal(err)
-	}
+	require.NoError(t, err)
 }
 
 func Test_slugExists(t *testing.T) {
 	t.Run("Test slugs", func(t *testing.T) {
 		setupFakeDB(t)
-		if exists, err := slugExists("source"); err != nil || exists == false {
-			t.Error("Wrong slug existence")
-		}
-		if exists, err := slugExists("test"); err != nil || exists == true {
-			t.Error("Wrong slug existence")
-		}
+
+		exists, err := slugExists("source")
+		assert.NoError(t, err)
+		assert.True(t, exists)
+		exists, err = slugExists("test")
+		assert.NoError(t, err)
+		assert.False(t, exists)
+
 		closeFakeDB(t)
 	})
 }
 
 func Test_generateSlug(t *testing.T) {
 	t.Run("Test slug generation", func(t *testing.T) {
-		if slug := generateSlug(); len(slug) != 6 {
-			t.Error("Wrong slug length")
-		}
+		assert.Len(t, generateSlug(), 6)
 	})
 }
 
@@ -56,39 +56,33 @@ func TestShortenedUrlHandler(t *testing.T) {
 			w := httptest.NewRecorder()
 			appRouter.ServeHTTP(w, req)
 			resp := w.Result()
-			if resp.StatusCode != http.StatusTemporaryRedirect {
-				t.Error()
-			}
+
+			assert.Equal(t, http.StatusTemporaryRedirect, resp.StatusCode)
 		})
 		t.Run("Test redirect location header", func(t *testing.T) {
 			req := httptest.NewRequest("GET", "http://example.com/source", nil)
 			w := httptest.NewRecorder()
 			appRouter.ServeHTTP(w, req)
 			resp := w.Result()
-			if resp.Header.Get("Location") != "https://git.jlel.se/jlelse/GoShort" {
-				t.Error()
-			}
+
+			assert.Equal(t, "https://git.jlel.se/jlelse/GoShort", resp.Header.Get("Location"))
 		})
 		t.Run("Test missing slug redirect code", func(t *testing.T) {
 			req := httptest.NewRequest("GET", "http://example.com/test", nil)
 			w := httptest.NewRecorder()
 			appRouter.ServeHTTP(w, req)
 			resp := w.Result()
-			if resp.StatusCode != http.StatusNotFound {
-				t.Error()
-			}
+
+			assert.Equal(t, http.StatusNotFound, resp.StatusCode)
 		})
 		t.Run("Test no slug mux var", func(t *testing.T) {
 			req := httptest.NewRequest("GET", "http://example.com/", nil)
 			w := httptest.NewRecorder()
 			appRouter.ServeHTTP(w, req)
 			resp := w.Result()
-			if resp.StatusCode != http.StatusTemporaryRedirect {
-				t.Error()
-			}
-			if resp.Header.Get("Location") != "http://long.example.com" {
-				t.Error()
-			}
+
+			assert.Equal(t, http.StatusTemporaryRedirect, resp.StatusCode)
+			assert.Equal(t, "http://long.example.com", resp.Header.Get("Location"))
 		})
 		closeFakeDB(t)
 	})
@@ -98,37 +92,29 @@ func Test_checkPassword(t *testing.T) {
 	viper.Set("password", "abc")
 	t.Run("No password", func(t *testing.T) {
 		req := httptest.NewRequest("GET", "http://example.com/test", nil)
-		_ = req.ParseForm()
-		if checkPassword(httptest.NewRecorder(), req) != false {
-			t.Error()
-		}
+
+		assert.False(t, checkPassword(httptest.NewRecorder(), req))
 	})
 	t.Run("Password via query", func(t *testing.T) {
 		req := httptest.NewRequest("GET", "http://example.com/test?password=abc", nil)
-		_ = req.ParseForm()
-		if checkPassword(httptest.NewRecorder(), req) != true {
-			t.Error()
-		}
+
+		assert.True(t, checkPassword(httptest.NewRecorder(), req))
 	})
 	t.Run("Wrong password via query", func(t *testing.T) {
 		req := httptest.NewRequest("GET", "http://example.com/test?password=wrong", nil)
-		_ = req.ParseForm()
-		if checkPassword(httptest.NewRecorder(), req) != false {
-			t.Error()
-		}
+
+		assert.False(t, checkPassword(httptest.NewRecorder(), req))
 	})
 	t.Run("Password via BasicAuth", func(t *testing.T) {
 		req := httptest.NewRequest("GET", "http://example.com/test", nil)
 		req.SetBasicAuth("username", "abc")
-		if checkPassword(httptest.NewRecorder(), req) != true {
-			t.Error()
-		}
+
+		assert.True(t, checkPassword(httptest.NewRecorder(), req))
 	})
 	t.Run("Wrong password via BasicAuth", func(t *testing.T) {
 		req := httptest.NewRequest("GET", "http://example.com/test", nil)
 		req.SetBasicAuth("username", "wrong")
-		if checkPassword(httptest.NewRecorder(), req) != false {
-			t.Error()
-		}
+
+		assert.False(t, checkPassword(httptest.NewRecorder(), req))
 	})
 }

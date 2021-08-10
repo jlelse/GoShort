@@ -33,5 +33,4 @@ func migrateDatabase() {
 		log.Fatal(err.Error())
 		return
 	}
-	return
 }
