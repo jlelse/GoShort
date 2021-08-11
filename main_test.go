@@ -1,43 +1,43 @@
 package main
 
 import (
-	"database/sql"
+	"io"
 	"net/http"
 	"net/http/httptest"
 	"path/filepath"
 	"testing"
 
-	"github.com/spf13/viper"
 	"github.com/stretchr/testify/assert"
 	"github.com/stretchr/testify/require"
 )
 
-func setupFakeDB(t *testing.T) {
-	var err error
-	appDb, err = sql.Open("sqlite3", filepath.Join(t.TempDir(), "data.db")+"?cache=shared&mode=rwc&_journal_mode=WAL&_busy_timeout=100")
-	if err != nil {
-		t.Fatal(err)
+func testApp(t *testing.T) *app {
+	app := &app{
+		config: &config{
+			DBPath: filepath.Join(t.TempDir(), "data.db"),
+		},
 	}
-	migrateDatabase()
+	err := app.openDatabase()
+	require.NoError(t, err)
+	return app
 }
 
-func closeFakeDB(t *testing.T) {
-	err := appDb.Close()
-	require.NoError(t, err)
+func closeTestApp(_ *testing.T, app *app) {
+	app.shutdown.ShutdownAndWait()
 }
 
 func Test_slugExists(t *testing.T) {
 	t.Run("Test slugs", func(t *testing.T) {
-		setupFakeDB(t)
+		app := testApp(t)
 
-		exists, err := slugExists("source")
+		exists, err := app.slugExists("source")
 		assert.NoError(t, err)
 		assert.True(t, exists)
-		exists, err = slugExists("test")
+		exists, err = app.slugExists("test")
 		assert.NoError(t, err)
 		assert.False(t, exists)
 
-		closeFakeDB(t)
+		closeTestApp(t, app)
 	})
 }
 
@@ -48,22 +48,25 @@ func Test_generateSlug(t *testing.T) {
 }
 
 func TestShortenedUrlHandler(t *testing.T) {
-	viper.Set("defaultUrl", "http://long.example.com")
 	t.Run("Test ShortenedUrlHandler", func(t *testing.T) {
-		setupFakeDB(t)
-		initRouter()
+		app := testApp(t)
+
+		app.config.DefaultUrl = "http://long.example.com"
+
+		router := app.initRouter()
+
 		t.Run("Test redirect code", func(t *testing.T) {
 			req := httptest.NewRequest("GET", "http://example.com/source", nil)
 			w := httptest.NewRecorder()
-			appRouter.ServeHTTP(w, req)
+			router.ServeHTTP(w, req)
 			resp := w.Result()
 
 			assert.Equal(t, http.StatusTemporaryRedirect, resp.StatusCode)
 		})
-		t.Run("Test redirect location header", func(t *testing.T) {
+		t.Run("Test default redirect location header", func(t *testing.T) {
 			req := httptest.NewRequest("GET", "http://example.com/source", nil)
 			w := httptest.NewRecorder()
-			appRouter.ServeHTTP(w, req)
+			router.ServeHTTP(w, req)
 			resp := w.Result()
 
 			assert.Equal(t, "https://git.jlel.se/jlelse/GoShort", resp.Header.Get("Location"))
@@ -71,7 +74,7 @@ func TestShortenedUrlHandler(t *testing.T) {
 		t.Run("Test missing slug redirect code", func(t *testing.T) {
 			req := httptest.NewRequest("GET", "http://example.com/test", nil)
 			w := httptest.NewRecorder()
-			appRouter.ServeHTTP(w, req)
+			router.ServeHTTP(w, req)
 			resp := w.Result()
 
 			assert.Equal(t, http.StatusNotFound, resp.StatusCode)
@@ -79,43 +82,100 @@ func TestShortenedUrlHandler(t *testing.T) {
 		t.Run("Test no slug mux var", func(t *testing.T) {
 			req := httptest.NewRequest("GET", "http://example.com/", nil)
 			w := httptest.NewRecorder()
-			appRouter.ServeHTTP(w, req)
+			router.ServeHTTP(w, req)
 			resp := w.Result()
 
 			assert.Equal(t, http.StatusTemporaryRedirect, resp.StatusCode)
 			assert.Equal(t, "http://long.example.com", resp.Header.Get("Location"))
 		})
-		closeFakeDB(t)
+		t.Run("Test custom url redirect", func(t *testing.T) {
+			err := app.insertRedirect("customurl", "https://example.net", typUrl)
+			require.NoError(t, err)
+
+			req := httptest.NewRequest("GET", "http://example.com/customurl", nil)
+			w := httptest.NewRecorder()
+			router.ServeHTTP(w, req)
+			resp := w.Result()
+
+			assert.Equal(t, "https://example.net", resp.Header.Get("Location"))
+		})
+		t.Run("Test custom text", func(t *testing.T) {
+			err := app.insertRedirect("customtext", "Hello!", typText)
+			require.NoError(t, err)
+
+			req := httptest.NewRequest("GET", "http://example.com/customtext", nil)
+			w := httptest.NewRecorder()
+			router.ServeHTTP(w, req)
+			resp := w.Result()
+
+			respBody, err := io.ReadAll(resp.Body)
+			require.NoError(t, err)
+			_ = resp.Body.Close()
+
+			assert.Equal(t, "Hello!", string(respBody))
+		})
+
+		closeTestApp(t, app)
 	})
 }
 
 func Test_checkPassword(t *testing.T) {
-	viper.Set("password", "abc")
+	app := testApp(t)
+
+	app.config.Password = "abc"
+
 	t.Run("No password", func(t *testing.T) {
 		req := httptest.NewRequest("GET", "http://example.com/test", nil)
 
-		assert.False(t, checkPassword(httptest.NewRecorder(), req))
+		assert.False(t, app.checkPassword(httptest.NewRecorder(), req))
 	})
 	t.Run("Password via query", func(t *testing.T) {
 		req := httptest.NewRequest("GET", "http://example.com/test?password=abc", nil)
 
-		assert.True(t, checkPassword(httptest.NewRecorder(), req))
+		assert.True(t, app.checkPassword(httptest.NewRecorder(), req))
 	})
 	t.Run("Wrong password via query", func(t *testing.T) {
 		req := httptest.NewRequest("GET", "http://example.com/test?password=wrong", nil)
 
-		assert.False(t, checkPassword(httptest.NewRecorder(), req))
+		assert.False(t, app.checkPassword(httptest.NewRecorder(), req))
 	})
 	t.Run("Password via BasicAuth", func(t *testing.T) {
 		req := httptest.NewRequest("GET", "http://example.com/test", nil)
 		req.SetBasicAuth("username", "abc")
 
-		assert.True(t, checkPassword(httptest.NewRecorder(), req))
+		assert.True(t, app.checkPassword(httptest.NewRecorder(), req))
 	})
 	t.Run("Wrong password via BasicAuth", func(t *testing.T) {
 		req := httptest.NewRequest("GET", "http://example.com/test", nil)
 		req.SetBasicAuth("username", "wrong")
 
-		assert.False(t, checkPassword(httptest.NewRecorder(), req))
+		assert.False(t, app.checkPassword(httptest.NewRecorder(), req))
 	})
+
+	t.Run("Test login middleware success", func(t *testing.T) {
+		req := httptest.NewRequest("GET", "http://example.com/test", nil)
+		req.SetBasicAuth("username", "abc")
+
+		w := httptest.NewRecorder()
+		app.loginMiddleware(http.HandlerFunc(func(rw http.ResponseWriter, r *http.Request) {
+			rw.WriteHeader(http.StatusNotModified)
+		})).ServeHTTP(w, req)
+		resp := w.Result()
+
+		assert.Equal(t, http.StatusNotModified, resp.StatusCode)
+	})
+	t.Run("Test login middleware fail", func(t *testing.T) {
+		req := httptest.NewRequest("GET", "http://example.com/test", nil)
+		req.SetBasicAuth("username", "xyz")
+
+		w := httptest.NewRecorder()
+		app.loginMiddleware(http.HandlerFunc(func(rw http.ResponseWriter, r *http.Request) {
+			rw.WriteHeader(http.StatusNotModified)
+		})).ServeHTTP(w, req)
+		resp := w.Result()
+
+		assert.Equal(t, http.StatusUnauthorized, resp.StatusCode)
+	})
+
+	closeTestApp(t, app)
 }
