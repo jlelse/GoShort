@@ -3,7 +3,8 @@ WORKDIR /app
 ENV GOFLAGS="-tags=linux,libsqlite3"
 RUN apk add --no-cache git gcc musl-dev
 RUN apk add --no-cache --repository=http://dl-cdn.alpinelinux.org/alpine/edge/main sqlite-dev
-ADD . /app
+ADD *.go go.mod go.sum /app/
+ADD templates/ /app/templates/
 RUN go test -cover ./...
 RUN go build -ldflags '-w -s' -o goshort
 
