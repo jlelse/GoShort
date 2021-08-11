@@ -4,16 +4,12 @@
 <link rel=stylesheet href=https://cdn.jsdelivr.net/npm/@exampledev/new.css@1.1.3/new.min.css>
 <title>Short URLs</title>
 <h1>Short URLs</h1>
-<table>
+<table style="white-space:nowrap;overflow-x:auto;display:block;">
 <thead>
-<tr>
-<th><span style="white-space: nowrap;">slug</span></th>
-<th><span style="white-space: nowrap;">url</span></th>
-<th><span style="white-space: nowrap;">hits</span></th>
-</tr>
+<tr><th>slug</th><th>hits</th><th>url</th></tr>
 </thead>
 <tbody>
-{{range .}}<tr><td>{{.Slug}}</td><td>{{.URL}}</td><td>{{.Hits}}</td></tr>{{end}}
+{{range .}}<tr><td>{{.Slug}}</td><td>{{.Hits}}</td><td>{{.URL}}</td></tr>{{end}}
 </tbody>
 </table>
 </html>
