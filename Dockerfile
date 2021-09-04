@@ -1,6 +1,6 @@
 FROM golang:1.17-alpine3.14 as build
 WORKDIR /app
-RUN apk add --no-cache git gcc musl-dev
+ENV CGO_ENABLED=0
 ADD *.go go.mod go.sum /app/
 ADD templates/ /app/templates/
 RUN go test -cover ./...
