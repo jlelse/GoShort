@@ -1,8 +1,5 @@
-FROM golang:1.16-alpine3.14 as build
+FROM golang:1.17-alpine3.14 as build
 WORKDIR /app
-ENV GOFLAGS="-tags=linux,libsqlite3"
-RUN apk add --no-cache git gcc musl-dev
-RUN apk add --no-cache --repository=http://dl-cdn.alpinelinux.org/alpine/edge/main sqlite-dev
 ADD *.go go.mod go.sum /app/
 ADD templates/ /app/templates/
 RUN go test -cover ./...
@@ -14,5 +11,4 @@ VOLUME /app/config
 VOLUME /app/data
 EXPOSE 8080
 CMD ["goshort"]
-RUN apk add --no-cache --repository=http://dl-cdn.alpinelinux.org/alpine/edge/main sqlite-dev
 COPY --from=build /app/goshort /bin/

@@ -1,26 +1,28 @@
 package main
 
 import (
-	"database/sql"
+	"context"
 	"errors"
 	"log"
 	"os"
 	"path/filepath"
 
-	"github.com/lopezator/migrator"
+	"zombiezen.com/go/sqlite"
+	"zombiezen.com/go/sqlite/sqlitemigration"
+	"zombiezen.com/go/sqlite/sqlitex"
 )
 
 func (a *app) openDatabase() (err error) {
 	if a.config.DBPath == "" {
 		return errors.New("empty database path")
 	}
-	_ = os.MkdirAll(filepath.Dir(a.config.DBPath), 0644)
-	a.database, err = sql.Open("sqlite3", a.config.DBPath+"?cache=shared&mode=rwc&_journal_mode=WAL&_busy_timeout=100")
+	_ = os.MkdirAll(filepath.Dir(a.config.DBPath), os.ModePerm)
+	a.dbpool, err = sqlitex.Open(a.config.DBPath, sqlite.OpenCreate|sqlite.OpenReadWrite|sqlite.OpenWAL|sqlite.OpenNoMutex, 10)
 	if err != nil {
 		return err
 	}
 	a.shutdown.Add(func() {
-		_ = a.database.Close()
+		_ = a.dbpool.Close()
 		log.Println("Closed database")
 	})
 	a.migrateDatabase()
@@ -30,26 +32,22 @@ func (a *app) openDatabase() (err error) {
 func (a *app) migrateDatabase() {
 	a.write.Lock()
 	defer a.write.Unlock()
-	m, err := migrator.New(
-		migrator.Migrations(
-			&migrator.Migration{
-				Name: "00001",
-				Func: func(tx *sql.Tx) error {
-					_, err := tx.Exec(`
-					drop table if exists gorp_migrations;
-					create table if not exists redirect(slug text not null primary key, url text not null, type text not null default 'url', hits integer default 0 not null);
-					insert or replace into redirect (slug, url) values ('source', 'https://git.jlel.se/jlelse/GoShort');
-					`)
-					return err
-				},
-			},
-		),
-	)
-	if err != nil {
-		log.Fatal(err.Error())
-		return
+
+	schema := sqlitemigration.Schema{
+		AppID: 0x1bd6d04a,
+		Migrations: []string{
+			`
+			drop table if exists gorp_migrations;
+			create table if not exists redirect(slug text not null primary key, url text not null, type text not null default 'url', hits integer default 0 not null);
+			insert or replace into redirect (slug, url) values ('source', 'https://git.jlel.se/jlelse/GoShort');
+			`,
+		},
 	}
-	if err := m.Migrate(a.database); err != nil {
+
+	conn := a.dbpool.Get(context.Background())
+	defer a.dbpool.Put(conn)
+	err := sqlitemigration.Migrate(context.Background(), conn, schema)
+	if err != nil {
 		log.Fatal(err.Error())
 		return
 	}
@@ -63,26 +61,43 @@ const (
 func (a *app) insertRedirect(slug string, url string, typ string) error {
 	a.write.Lock()
 	defer a.write.Unlock()
-	_, err := a.database.Exec("INSERT INTO redirect (slug, url, type) VALUES (?, ?, ?)", slug, url, typ)
-	return err
+	conn := a.dbpool.Get(context.Background())
+	defer a.dbpool.Put(conn)
+	return sqlitex.Exec(conn, "INSERT INTO redirect (slug, url, type) VALUES (?, ?, ?)", nil, slug, url, typ)
 }
 
 func (a *app) deleteSlug(slug string) error {
 	a.write.Lock()
 	defer a.write.Unlock()
-	_, err := a.database.Exec("DELETE FROM redirect WHERE slug = ?", slug)
-	return err
+	conn := a.dbpool.Get(context.Background())
+	defer a.dbpool.Put(conn)
+	return sqlitex.Exec(conn, "DELETE FROM redirect WHERE slug = ?", nil, slug)
+}
+
+func (a *app) updateSlug(ctx context.Context, url, typeStr, slug string) error {
+	a.write.Lock()
+	defer a.write.Unlock()
+	conn := a.dbpool.Get(ctx)
+	defer a.dbpool.Put(conn)
+	return sqlitex.Exec(conn, "UPDATE redirect SET url = ?, type = ? WHERE slug = ?", nil, url, typeStr, slug)
 }
 
 func (a *app) increaseHits(slug string) {
 	go func() {
 		a.write.Lock()
 		defer a.write.Unlock()
-		_, _ = a.database.Exec("UPDATE redirect SET hits = hits + 1 WHERE slug = ?", slug)
+		conn := a.dbpool.Get(context.Background())
+		defer a.dbpool.Put(conn)
+		_ = sqlitex.Exec(conn, "UPDATE redirect SET hits = hits + 1 WHERE slug = ?", nil, slug)
 	}()
 }
 
 func (a *app) slugExists(slug string) (exists bool, err error) {
-	err = a.database.QueryRow("SELECT EXISTS(SELECT 1 FROM redirect WHERE slug = ?)", slug).Scan(&exists)
+	conn := a.dbpool.Get(context.Background())
+	defer a.dbpool.Put(conn)
+	err = sqlitex.Exec(conn, "SELECT EXISTS(SELECT 1 FROM redirect WHERE slug = ?)", func(stmt *sqlite.Stmt) error {
+		exists = stmt.ColumnInt(0) == 1
+		return nil
+	}, slug)
 	return
 }

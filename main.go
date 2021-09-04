@@ -2,7 +2,6 @@ package main
 
 import (
 	"context"
-	"database/sql"
 	"fmt"
 	"log"
 	"math/rand"
@@ -15,13 +14,14 @@ import (
 	gsd "git.jlel.se/jlelse/go-shutdowner"
 	"github.com/go-chi/chi/v5"
 	"github.com/go-chi/chi/v5/middleware"
-	_ "github.com/mattn/go-sqlite3"
 	"github.com/spf13/viper"
+	"zombiezen.com/go/sqlite"
+	"zombiezen.com/go/sqlite/sqlitex"
 )
 
 type app struct {
 	config   *config
-	database *sql.DB
+	dbpool   *sqlitex.Pool
 	write    sync.Mutex
 	shutdown gsd.Shutdowner
 }
@@ -190,7 +190,12 @@ func (a *app) shortenHandler(w http.ResponseWriter, r *http.Request) {
 	slug := r.FormValue("slug")
 	manualSlug := false
 	if slug == "" {
-		_ = a.database.QueryRow("SELECT slug FROM redirect WHERE url = ?", requestURL).Scan(&slug)
+		conn := a.dbpool.Get(r.Context())
+		defer a.dbpool.Put(conn)
+		_ = sqlitex.Exec(conn, "SELECT slug FROM redirect WHERE url = ?", func(stmt *sqlite.Stmt) error {
+			slug = stmt.ColumnText(0)
+			return nil
+		}, requestURL)
 	} else {
 		manualSlug = true
 	}
@@ -240,7 +245,12 @@ func (a *app) shortenTextHandler(w http.ResponseWriter, r *http.Request) {
 	slug := r.FormValue("slug")
 	manualSlug := false
 	if slug == "" {
-		_ = a.database.QueryRow("SELECT slug FROM redirect WHERE url = ? and type = 'text'", requestText).Scan(&slug)
+		conn := a.dbpool.Get(r.Context())
+		defer a.dbpool.Put(conn)
+		_ = sqlitex.Exec(conn, "SELECT slug FROM redirect WHERE url = ? and type = 'text'", func(stmt *sqlite.Stmt) error {
+			slug = stmt.ColumnText(0)
+			return nil
+		}, requestText)
 	} else {
 		manualSlug = true
 	}
@@ -299,13 +309,10 @@ func (a *app) updateHandler(w http.ResponseWriter, r *http.Request) {
 		return
 	}
 
-	a.write.Lock()
-	if _, err := a.database.Exec("UPDATE redirect SET url = ?, type = ? WHERE slug = ?", newURL, typeString, slug); err != nil {
-		a.write.Unlock()
+	if err := a.updateSlug(r.Context(), newURL, typeString, slug); err != nil {
 		http.Error(w, err.Error(), http.StatusInternalServerError)
 		return
 	}
-	a.write.Unlock()
 
 	w.WriteHeader(http.StatusAccepted)
 	_, _ = w.Write([]byte("Slug updated"))
@@ -339,20 +346,22 @@ func (a *app) listHandler(w http.ResponseWriter, r *http.Request) {
 		Hits int
 	}
 	var list []row
-	rows, err := a.database.Query("SELECT slug, url, hits FROM redirect")
+
+	conn := a.dbpool.Get(r.Context())
+	err := sqlitex.Exec(conn, "SELECT slug, url, hits FROM redirect", func(stmt *sqlite.Stmt) error {
+		var r row
+		r.Slug = stmt.ColumnText(0)
+		r.URL = stmt.ColumnText(1)
+		r.Hits = stmt.ColumnInt(2)
+		list = append(list, r)
+		return nil
+	})
+	a.dbpool.Put(conn)
 	if err != nil {
 		http.Error(w, err.Error(), http.StatusInternalServerError)
 		return
 	}
-	for rows.Next() {
-		var r row
-		err = rows.Scan(&r.Slug, &r.URL, &r.Hits)
-		if err != nil {
-			http.Error(w, err.Error(), http.StatusInternalServerError)
-			return
-		}
-		list = append(list, r)
-	}
+
 	err = listTemplate.Execute(w, &list)
 	if err != nil {
 		http.Error(w, err.Error(), http.StatusInternalServerError)
@@ -388,8 +397,16 @@ func (a *app) shortenedURLHandler(w http.ResponseWriter, r *http.Request) {
 	slug := chi.URLParam(r, "slug")
 
 	var redirectURL, typeString string
-	err := a.database.QueryRow("SELECT url, type FROM redirect WHERE slug = ?", slug).Scan(&redirectURL, &typeString)
-	if err != nil {
+
+	conn := a.dbpool.Get(r.Context())
+	err := sqlitex.Exec(conn, "SELECT url, type FROM redirect WHERE slug = ? LIMIT 1", func(stmt *sqlite.Stmt) error {
+		redirectURL = stmt.ColumnText(0)
+		typeString = stmt.ColumnText(1)
+		return nil
+	}, slug)
+	a.dbpool.Put(conn)
+
+	if err != nil || redirectURL == "" || typeString == "" {
 		http.NotFound(w, r)
 		return
 	}
