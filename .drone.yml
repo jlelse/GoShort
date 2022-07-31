@@ -9,8 +9,8 @@ steps:
       username: nologin
       password:
         from_secret: docker_password
-      repo: rg.fr-par.scw.cloud/jlelse/goshort
-      registry: rg.fr-par.scw.cloud/jlelse
+      repo: git.jlel.se/jlelse/goshort
+      registry: git.jlel.se
       tags: latest
       mirror: https://mirror.gcr.io
 

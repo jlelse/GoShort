@@ -1,4 +1,4 @@
-FROM golang:1.17-alpine3.14 as build
+FROM golang:1.18-alpine3.15 as build
 WORKDIR /app
 ENV CGO_ENABLED=0
 ADD *.go go.mod go.sum /app/
@@ -6,7 +6,7 @@ ADD templates/ /app/templates/
 RUN go test -cover ./...
 RUN go build -ldflags '-w -s' -o goshort
 
-FROM alpine:3.14
+FROM alpine:3.15
 WORKDIR /app
 VOLUME /app/config
 VOLUME /app/data
