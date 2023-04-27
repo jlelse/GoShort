@@ -1,4 +1,4 @@
-FROM golang:1.19-alpine3.17 as build
+FROM golang:1.20-alpine3.17 as build
 WORKDIR /app
 ENV CGO_ENABLED=0
 ADD *.go go.mod go.sum /app/
