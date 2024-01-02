@@ -63,7 +63,9 @@ func (a *app) insertRedirect(slug string, url string, typ string) error {
 	defer a.write.Unlock()
 	conn := a.dbpool.Get(context.Background())
 	defer a.dbpool.Put(conn)
-	return sqlitex.Exec(conn, "INSERT INTO redirect (slug, url, type) VALUES (?, ?, ?)", nil, slug, url, typ)
+	return sqlitex.Execute(conn, "INSERT INTO redirect (slug, url, type) VALUES (?, ?, ?)", &sqlitex.ExecOptions{
+		Args: []any{slug, url, typ},
+	})
 }
 
 func (a *app) deleteSlug(slug string) error {
@@ -71,7 +73,9 @@ func (a *app) deleteSlug(slug string) error {
 	defer a.write.Unlock()
 	conn := a.dbpool.Get(context.Background())
 	defer a.dbpool.Put(conn)
-	return sqlitex.Exec(conn, "DELETE FROM redirect WHERE slug = ?", nil, slug)
+	return sqlitex.Execute(conn, "DELETE FROM redirect WHERE slug = ?", &sqlitex.ExecOptions{
+		Args: []any{slug},
+	})
 }
 
 func (a *app) updateSlug(ctx context.Context, url, typeStr, slug string) error {
@@ -79,7 +83,9 @@ func (a *app) updateSlug(ctx context.Context, url, typeStr, slug string) error {
 	defer a.write.Unlock()
 	conn := a.dbpool.Get(ctx)
 	defer a.dbpool.Put(conn)
-	return sqlitex.Exec(conn, "UPDATE redirect SET url = ?, type = ? WHERE slug = ?", nil, url, typeStr, slug)
+	return sqlitex.Execute(conn, "UPDATE redirect SET url = ?, type = ? WHERE slug = ?", &sqlitex.ExecOptions{
+		Args: []any{url, typeStr, slug},
+	})
 }
 
 func (a *app) increaseHits(slug string) {
@@ -88,16 +94,21 @@ func (a *app) increaseHits(slug string) {
 		defer a.write.Unlock()
 		conn := a.dbpool.Get(context.Background())
 		defer a.dbpool.Put(conn)
-		_ = sqlitex.Exec(conn, "UPDATE redirect SET hits = hits + 1 WHERE slug = ?", nil, slug)
+		_ = sqlitex.Execute(conn, "UPDATE redirect SET hits = hits + 1 WHERE slug = ?", &sqlitex.ExecOptions{
+			Args: []any{slug},
+		})
 	}()
 }
 
 func (a *app) slugExists(slug string) (exists bool, err error) {
 	conn := a.dbpool.Get(context.Background())
 	defer a.dbpool.Put(conn)
-	err = sqlitex.Exec(conn, "SELECT EXISTS(SELECT 1 FROM redirect WHERE slug = ?)", func(stmt *sqlite.Stmt) error {
-		exists = stmt.ColumnInt(0) == 1
-		return nil
-	}, slug)
+	err = sqlitex.Execute(conn, "SELECT EXISTS(SELECT 1 FROM redirect WHERE slug = ?)", &sqlitex.ExecOptions{
+		Args: []any{slug},
+		ResultFunc: func(stmt *sqlite.Stmt) error {
+			exists = stmt.ColumnInt(0) == 1
+			return nil
+		},
+	})
 	return
 }
