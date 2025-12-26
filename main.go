@@ -3,9 +3,12 @@ package main
 import (
 	"context"
 	"fmt"
+	"html"
+	"io"
 	"log"
 	"math/rand"
 	"net/http"
+	"net/url"
 	"os"
 	"strconv"
 	"sync"
@@ -176,7 +179,8 @@ func generateTextForm(w http.ResponseWriter, title string, url string, fields []
 
 func (a *app) shortenHandler(w http.ResponseWriter, r *http.Request) {
 	writeShortenedURL := func(w http.ResponseWriter, slug string) {
-		_, _ = w.Write([]byte(a.config.ShortUrl + "/" + slug))
+		short, _ := url.JoinPath(a.config.ShortUrl, slug)
+		_, _ = io.WriteString(w, html.EscapeString(short))
 	}
 
 	requestURL := r.FormValue("url")
@@ -234,7 +238,8 @@ func (a *app) shortenHandler(w http.ResponseWriter, r *http.Request) {
 
 func (a *app) shortenTextHandler(w http.ResponseWriter, r *http.Request) {
 	writeShortenedURL := func(w http.ResponseWriter, slug string) {
-		_, _ = w.Write([]byte(a.config.ShortUrl + "/" + slug))
+		short, _ := url.JoinPath(a.config.ShortUrl, slug)
+		_, _ = io.WriteString(w, html.EscapeString(short))
 	}
 
 	requestText := r.FormValue("text")
