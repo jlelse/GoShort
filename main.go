@@ -23,6 +23,11 @@ import (
 	"zombiezen.com/go/sqlite/sqlitex"
 )
 
+var (
+	fatalf   = log.Fatal
+	exitFunc = os.Exit
+)
+
 type app struct {
 	config   *config
 	dbpool   *sqlitex.Pool
@@ -69,15 +74,15 @@ func main() {
 	_ = viper.ReadInConfig()
 
 	if !viper.IsSet("password") {
-		log.Fatal("No password (password) is configured.")
+		fatalf("No password (password) is configured.")
 		return
 	}
 	if !viper.IsSet("shortUrl") {
-		log.Fatal("No short URL (shortUrl) is configured.")
+		fatalf("No short URL (shortUrl) is configured.")
 		return
 	}
 	if !viper.IsSet("defaultUrl") {
-		log.Fatal("No default URL (defaultUrl) is configured.")
+		fatalf("No default URL (defaultUrl) is configured.")
 		return
 	}
 
@@ -86,7 +91,7 @@ func main() {
 	app.config = &config{}
 	err := viper.Unmarshal(app.config)
 	if err != nil {
-		log.Fatal("Failed to unmarshal config:", err.Error())
+		fatalf("Failed to unmarshal config:", err.Error())
 		return
 	}
 
@@ -94,7 +99,7 @@ func main() {
 	if err != nil {
 		log.Println("Error opening database:", err.Error())
 		app.shutdown.ShutdownAndWait()
-		os.Exit(1)
+		exitFunc(1)
 		return
 	}
 
