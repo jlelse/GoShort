@@ -2,3 +2,4 @@ data/
 config/
 config.yaml
 goshort
+coverage.out
