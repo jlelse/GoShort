@@ -24,13 +24,13 @@ jobs:
         username: nologin
         password: ${{ secrets.GITEA_TOKEN }}
     - name: Test
-      uses: docker/build-push-action@v5
+      uses: docker/build-push-action@v6
       with:
         push: false
         target: test
         tags: test
     - name: Build image
-      uses: docker/build-push-action@v5
+      uses: docker/build-push-action@v6
       with:
         push: true
         target: base
