@@ -69,7 +69,7 @@ func TestShortenedUrlHandler(t *testing.T) {
 			router.ServeHTTP(w, req)
 			resp := w.Result()
 
-			assert.Equal(t, "https://git.jlel.se/jlelse/GoShort", resp.Header.Get("Location"))
+			assert.Equal(t, "https://github.com/jlelse/GoShort", resp.Header.Get("Location"))
 		})
 		t.Run("Test missing slug redirect code", func(t *testing.T) {
 			req := httptest.NewRequest("GET", "http://example.com/test", nil)

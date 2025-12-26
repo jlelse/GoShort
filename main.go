@@ -56,8 +56,6 @@ func (a *app) initRouter() (router *chi.Mux) {
 }
 
 func main() {
-	rand.Seed(time.Now().UTC().UnixNano())
-
 	viper.SetDefault("dbPath", "data/goshort.db")
 	viper.SetDefault("port", 8080)
 
@@ -190,12 +188,15 @@ func (a *app) shortenHandler(w http.ResponseWriter, r *http.Request) {
 	slug := r.FormValue("slug")
 	manualSlug := false
 	if slug == "" {
-		conn := a.dbpool.Get(r.Context())
+		conn, _ := a.dbpool.Take(r.Context())
 		defer a.dbpool.Put(conn)
-		_ = sqlitex.Exec(conn, "SELECT slug FROM redirect WHERE url = ?", func(stmt *sqlite.Stmt) error {
-			slug = stmt.ColumnText(0)
-			return nil
-		}, requestURL)
+		_ = sqlitex.Execute(conn, "SELECT slug FROM redirect WHERE url = ?", &sqlitex.ExecOptions{
+			Args: []any{requestURL},
+			ResultFunc: func(stmt *sqlite.Stmt) error {
+				slug = stmt.ColumnText(0)
+				return nil
+			},
+		})
 	} else {
 		manualSlug = true
 	}
@@ -245,12 +246,15 @@ func (a *app) shortenTextHandler(w http.ResponseWriter, r *http.Request) {
 	slug := r.FormValue("slug")
 	manualSlug := false
 	if slug == "" {
-		conn := a.dbpool.Get(r.Context())
+		conn, _ := a.dbpool.Take(r.Context())
 		defer a.dbpool.Put(conn)
-		_ = sqlitex.Exec(conn, "SELECT slug FROM redirect WHERE url = ? and type = 'text'", func(stmt *sqlite.Stmt) error {
-			slug = stmt.ColumnText(0)
-			return nil
-		}, requestText)
+		_ = sqlitex.Execute(conn, "SELECT slug FROM redirect WHERE url = ? and type = 'text'", &sqlitex.ExecOptions{
+			Args: []any{requestText},
+			ResultFunc: func(stmt *sqlite.Stmt) error {
+				slug = stmt.ColumnText(0)
+				return nil
+			},
+		})
 	} else {
 		manualSlug = true
 	}
@@ -347,14 +351,16 @@ func (a *app) listHandler(w http.ResponseWriter, r *http.Request) {
 	}
 	var list []row
 
-	conn := a.dbpool.Get(r.Context())
-	err := sqlitex.Exec(conn, "SELECT slug, url, hits FROM redirect", func(stmt *sqlite.Stmt) error {
-		var r row
-		r.Slug = stmt.ColumnText(0)
-		r.URL = stmt.ColumnText(1)
-		r.Hits = stmt.ColumnInt(2)
-		list = append(list, r)
-		return nil
+	conn, _ := a.dbpool.Take(r.Context())
+	err := sqlitex.Execute(conn, "SELECT slug, url, hits FROM redirect", &sqlitex.ExecOptions{
+		ResultFunc: func(stmt *sqlite.Stmt) error {
+			var r row
+			r.Slug = stmt.ColumnText(0)
+			r.URL = stmt.ColumnText(1)
+			r.Hits = stmt.ColumnInt(2)
+			list = append(list, r)
+			return nil
+		},
 	})
 	a.dbpool.Put(conn)
 	if err != nil {
@@ -398,12 +404,15 @@ func (a *app) shortenedURLHandler(w http.ResponseWriter, r *http.Request) {
 
 	var redirectURL, typeString string
 
-	conn := a.dbpool.Get(r.Context())
-	err := sqlitex.Exec(conn, "SELECT url, type FROM redirect WHERE slug = ? LIMIT 1", func(stmt *sqlite.Stmt) error {
-		redirectURL = stmt.ColumnText(0)
-		typeString = stmt.ColumnText(1)
-		return nil
-	}, slug)
+	conn, _ := a.dbpool.Take(r.Context())
+	err := sqlitex.Execute(conn, "SELECT url, type FROM redirect WHERE slug = ? LIMIT 1", &sqlitex.ExecOptions{
+		Args: []any{slug},
+		ResultFunc: func(stmt *sqlite.Stmt) error {
+			redirectURL = stmt.ColumnText(0)
+			typeString = stmt.ColumnText(1)
+			return nil
+		},
+	})
 	a.dbpool.Put(conn)
 
 	if err != nil || redirectURL == "" || typeString == "" {
