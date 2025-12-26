@@ -514,9 +514,17 @@ func TestShortenedURLHandlerIncrementsHits(t *testing.T) {
 	req := httptest.NewRequest("GET", "/hitme", nil)
 	w := httptest.NewRecorder()
 	router.ServeHTTP(w, req)
-	time.Sleep(50 * time.Millisecond)
 
-	_, _, hits, found := getRedirect(t, app, "hitme")
+	var hits int
+	found := false
+	deadline := time.Now().Add(500 * time.Millisecond)
+	for time.Now().Before(deadline) {
+		_, _, hits, found = getRedirect(t, app, "hitme")
+		if found && hits > 0 {
+			break
+		}
+		time.Sleep(10 * time.Millisecond)
+	}
 	assert.True(t, found)
 	assert.GreaterOrEqual(t, hits, 1)
 	closeTestApp(t, app)
