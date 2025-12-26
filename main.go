@@ -4,6 +4,7 @@ import (
 	"context"
 	"fmt"
 	"html"
+	"html/template"
 	"io"
 	"log"
 	"math/rand/v2"
@@ -161,20 +162,20 @@ func shortenTextFormHandler(w http.ResponseWriter, r *http.Request) {
 }
 
 func generateURLForm(w http.ResponseWriter, title string, url string, fields [][]string) error {
-	return urlFormTemplate.Execute(w, map[string]interface{}{
+	return urlFormTemplate.Execute(w, &templateData{Style: template.CSS(styleCSS), Data: map[string]any{
 		"Title":  title,
 		"URL":    url,
 		"Fields": fields,
-	})
+	}})
 }
 
 func generateTextForm(w http.ResponseWriter, title string, url string, fields [][]string, textAreas [][]string) error {
-	return textFormTemplate.Execute(w, map[string]interface{}{
+	return textFormTemplate.Execute(w, &templateData{Style: template.CSS(styleCSS), Data: map[string]any{
 		"Title":     title,
 		"URL":       url,
 		"Fields":    fields,
 		"TextAreas": textAreas,
-	})
+	}})
 }
 
 func (a *app) shortenHandler(w http.ResponseWriter, r *http.Request) {
@@ -373,7 +374,7 @@ func (a *app) listHandler(w http.ResponseWriter, r *http.Request) {
 		return
 	}
 
-	err = listTemplate.Execute(w, &list)
+	err = listTemplate.Execute(w, &templateData{Style: template.CSS(styleCSS), Data: &list})
 	if err != nil {
 		http.Error(w, err.Error(), http.StatusInternalServerError)
 		return

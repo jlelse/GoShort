@@ -1,12 +1,14 @@
 <!doctype html>
 <html lang=en>
 <meta name=viewport content="width=device-width, initial-scale=1.0">
-<link rel=stylesheet href=https://cdn.jsdelivr.net/npm/@exampledev/new.css@1.1.3/new.min.css>
-<title>{{.Title}}</title>
-<h1>{{.Title}}</h1>
-<form action={{.URL}} method=post>
-{{range .Fields}}<input type=text name={{index . 0}} placeholder={{index . 0}} value="{{index . 1}}"><br>{{end}}
-{{range .TextAreas}}<textarea name={{index . 0}} placeholder={{index . 0}}>{{index . 1}}</textarea><br>{{end}}
-<input type=submit value={{.Title}}>
+<style>
+{{.Style}}
+</style>
+<title>{{.Data.Title}}</title>
+<h1>{{.Data.Title}}</h1>
+<form action={{.Data.URL}} method=post>
+{{range .Data.Fields}}<input type=text name={{index . 0}} placeholder={{index . 0}} value="{{index . 1}}"><br>{{end}}
+{{range .Data.TextAreas}}<textarea name={{index . 0}} placeholder={{index . 0}}>{{index . 1}}</textarea><br>{{end}}
+<input type=submit value={{.Data.Title}}>
 </form>
 </html>

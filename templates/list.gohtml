@@ -1,15 +1,19 @@
 <!doctype html>
 <html lang=en>
 <meta name=viewport content="width=device-width, initial-scale=1.0">
-<link rel=stylesheet href=https://cdn.jsdelivr.net/npm/@exampledev/new.css@1.1.3/new.min.css>
+<style>
+{{.Style}}
+</style>
 <title>Short URLs</title>
 <h1>Short URLs</h1>
-<table style="white-space:nowrap;overflow-x:auto;display:block;">
+<div style="overflow-x:auto;">
+<table>
 <thead>
 <tr><th>slug</th><th>hits</th><th>url</th></tr>
 </thead>
 <tbody>
-{{range .}}<tr><td>{{.Slug}}</td><td>{{.Hits}}</td><td>{{.URL}}</td></tr>{{end}}
+{{range .Data}}<tr><td>{{.Slug}}</td><td>{{.Hits}}</td><td>{{.URL}}</td></tr>{{end}}
 </tbody>
 </table>
+</div>
 </html>

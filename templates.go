@@ -18,6 +18,11 @@ func init() {
 	}
 }
 
+type templateData struct {
+	Style template.CSS
+	Data  any
+}
+
 //go:embed templates/list.gohtml
 var listTemplateString string
 
@@ -41,3 +46,6 @@ func initTextFormTemplate() (err error) {
 	textFormTemplate, err = template.New("TextForm").Parse(strings.TrimSpace(textFormTemplateString))
 	return
 }
+
+//go:embed static/style.css
+var styleCSS string
