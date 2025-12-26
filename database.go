@@ -76,7 +76,7 @@ func (a *app) insertRedirect(slug string, url string, typ string) error {
 		return err
 	}
 	defer a.dbpool.Put(conn)
-	return sqlitex.Execute(conn, "INSERT INTO redirect (slug, url, type) VALUES (?, ?, ?)", &sqlitex.ExecOptions{
+	return sqlitex.ExecuteTransient(conn, "INSERT INTO redirect (slug, url, type) VALUES (?, ?, ?)", &sqlitex.ExecOptions{
 		Args: []any{slug, url, typ},
 	})
 }
@@ -89,7 +89,7 @@ func (a *app) deleteSlug(slug string) error {
 		return err
 	}
 	defer a.dbpool.Put(conn)
-	return sqlitex.Execute(conn, "DELETE FROM redirect WHERE slug = ?", &sqlitex.ExecOptions{
+	return sqlitex.ExecuteTransient(conn, "DELETE FROM redirect WHERE slug = ?", &sqlitex.ExecOptions{
 		Args: []any{slug},
 	})
 }
@@ -102,7 +102,7 @@ func (a *app) updateSlug(ctx context.Context, url, typeStr, slug string) error {
 		return err
 	}
 	defer a.dbpool.Put(conn)
-	return sqlitex.Execute(conn, "UPDATE redirect SET url = ?, type = ? WHERE slug = ?", &sqlitex.ExecOptions{
+	return sqlitex.ExecuteTransient(conn, "UPDATE redirect SET url = ?, type = ? WHERE slug = ?", &sqlitex.ExecOptions{
 		Args: []any{url, typeStr, slug},
 	})
 }

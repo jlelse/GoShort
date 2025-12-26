@@ -6,7 +6,7 @@ import (
 	"html"
 	"io"
 	"log"
-	"math/rand"
+	"math/rand/v2"
 	"net/http"
 	"net/url"
 	"os"
@@ -324,7 +324,7 @@ func (a *app) updateHandler(w http.ResponseWriter, r *http.Request) {
 	}
 
 	w.WriteHeader(http.StatusAccepted)
-	_, _ = w.Write([]byte("Slug updated"))
+	_, _ = io.WriteString(w, "Slug updated")
 }
 
 func (a *app) deleteHandler(w http.ResponseWriter, r *http.Request) {
@@ -345,7 +345,7 @@ func (a *app) deleteHandler(w http.ResponseWriter, r *http.Request) {
 	}
 
 	w.WriteHeader(http.StatusAccepted)
-	_, _ = w.Write([]byte("Slug deleted"))
+	_, _ = io.WriteString(w, "Slug deleted")
 }
 
 func (a *app) listHandler(w http.ResponseWriter, r *http.Request) {
@@ -396,12 +396,12 @@ func (a *app) checkPassword(w http.ResponseWriter, r *http.Request) bool {
 }
 
 func generateSlug() string {
-	var chars = []rune("0123456789abcdefghijklmnopqrstuvwxyz")
-	s := make([]rune, 6)
-	for i := range s {
-		s[i] = chars[rand.Intn(len(chars))]
+	const chars = "0123456789abcdefghijklmnopqrstuvwxyz"
+	b := make([]byte, 6)
+	for i := range b {
+		b[i] = chars[rand.IntN(len(chars))]
 	}
-	return string(s)
+	return string(b)
 }
 
 func (a *app) shortenedURLHandler(w http.ResponseWriter, r *http.Request) {
@@ -429,7 +429,7 @@ func (a *app) shortenedURLHandler(w http.ResponseWriter, r *http.Request) {
 
 	switch typeString {
 	case typText:
-		_, _ = w.Write([]byte(redirectURL))
+		_, _ = io.WriteString(w, redirectURL)
 	default:
 		http.Redirect(w, r, redirectURL, http.StatusTemporaryRedirect)
 	}
