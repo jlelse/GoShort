@@ -1,4 +1,4 @@
-FROM golang:1.21-alpine3.19 as buildbase
+FROM golang:1.25-alpine3.23 as buildbase
 
 WORKDIR /app
 ENV CGO_ENABLED=0
@@ -13,7 +13,7 @@ FROM build AS test
 
 RUN go test -timeout 300s -failfast -cover ./...
 
-FROM alpine:3.19 AS base
+FROM alpine:3.23 AS base
 
 WORKDIR /app
 VOLUME /app/config
