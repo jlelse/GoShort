@@ -4,6 +4,7 @@ WORKDIR /app
 ENV CGO_ENABLED=0
 ADD *.go go.mod go.sum /app/
 ADD templates/ /app/templates/
+ADD static/ /app/static/
 
 FROM buildbase AS build
 
