@@ -4,7 +4,7 @@ go 1.20
 
 require (
 	git.jlel.se/jlelse/go-shutdowner v0.0.0-20210707065515-773db8099c30
-	github.com/go-chi/chi/v5 v5.0.11
+	github.com/go-chi/chi/v5 v5.2.2
 	github.com/spf13/viper v1.18.2
 	github.com/stretchr/testify v1.8.4
 	zombiezen.com/go/sqlite v1.0.0
