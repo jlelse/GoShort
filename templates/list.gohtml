@@ -9,11 +9,40 @@
 <div style="overflow-x:auto;">
 <table>
 <thead>
-<tr><th>slug</th><th>hits</th><th>url</th></tr>
+<tr>
+<th><a href="/l?sort=slug&dir={{.Data.LinkSlug}}">Slug{{.Data.SlugIndicator}}</a></th>
+<th><a href="/l?sort=hits&dir={{.Data.LinkHits}}">Hits{{.Data.HitsIndicator}}</a></th>
+<th><a href="/l?sort=url&dir={{.Data.LinkURL}}">URL{{.Data.UrlIndicator}}</a></th>
+<th>Actions</th>
+</tr>
 </thead>
 <tbody>
-{{range .Data}}<tr><td>{{.Slug}}</td><td>{{.Hits}}</td><td>{{.URL}}</td></tr>{{end}}
+{{range .Data.List}}<tr>
+<td>{{.Slug}}</td>
+<td>{{.Hits}}</td>
+<td>{{.URL}}</td>
+<td><a href="#" onclick="copyText('{{.Short}}'); return false;">Copy</a> <a href="/d?slug={{.Slug}}">Delete</a></td>
+</tr>{{end}}
 </tbody>
 </table>
 </div>
+<script>
+function copyText(text) {
+  if (navigator.clipboard && navigator.clipboard.writeText) {
+    navigator.clipboard.writeText(text).then(function(){
+      // silent success
+    }, function(){
+      alert('Copy failed');
+    });
+  } else {
+    // Fallback
+    var ta = document.createElement('textarea');
+    ta.value = text;
+    document.body.appendChild(ta);
+    ta.select();
+    try { document.execCommand('copy'); } catch(e) { alert('Copy failed'); }
+    document.body.removeChild(ta);
+  }
+}
+</script>
 </html>

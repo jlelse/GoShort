@@ -47,6 +47,10 @@ func (a *app) migrateDatabase() {
 			`
 			update redirect set url = 'https://github.com/jlelse/GoShort' where slug = 'source';
 			`,
+			`
+			alter table redirect add column created integer;
+			update redirect set created = strftime('%s','now') where created is null;
+			`,
 		},
 	}
 
@@ -76,7 +80,7 @@ func (a *app) insertRedirect(slug string, url string, typ string) error {
 		return err
 	}
 	defer a.dbpool.Put(conn)
-	return sqlitex.ExecuteTransient(conn, "INSERT INTO redirect (slug, url, type) VALUES (?, ?, ?)", &sqlitex.ExecOptions{
+	return sqlitex.ExecuteTransient(conn, "INSERT INTO redirect (slug, url, type, created) VALUES (?, ?, ?, strftime('%s','now'))", &sqlitex.ExecOptions{
 		Args: []any{slug, url, typ},
 	})
 }

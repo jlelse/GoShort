@@ -12,6 +12,7 @@ import (
 	"net/url"
 	"os"
 	"strconv"
+	"strings"
 	"sync"
 	"time"
 
@@ -351,19 +352,55 @@ func (a *app) deleteHandler(w http.ResponseWriter, r *http.Request) {
 
 func (a *app) listHandler(w http.ResponseWriter, r *http.Request) {
 	type row struct {
-		Slug string
-		URL  string
-		Hits int
+		Slug  string
+		URL   string
+		Hits  int
+		Short string
 	}
 	var list []row
 
+	sort := r.URL.Query().Get("sort")
+	dir := r.URL.Query().Get("dir")
+
+	// determine effective direction
+	effectiveDir := dir
+	if effectiveDir != "asc" && effectiveDir != "desc" {
+		// use sensible defaults
+		switch sort {
+		case "hits":
+			effectiveDir = "desc"
+		case "slug", "url":
+			effectiveDir = "asc"
+		default:
+			effectiveDir = "desc" // created default
+		}
+	}
+
+	var orderBy string
+	swi := func(s string) string { return strings.ToUpper(s) }
+	switch sort {
+	case "slug":
+		orderBy = "slug COLLATE NOCASE " + swi(effectiveDir)
+	case "hits":
+		orderBy = "hits " + swi(effectiveDir)
+	case "url":
+		orderBy = "url COLLATE NOCASE " + swi(effectiveDir)
+	default:
+		orderBy = "created " + swi(effectiveDir)
+	}
+
+	query := "SELECT slug, url, hits FROM redirect ORDER BY " + orderBy
+
 	conn, _ := a.dbpool.Take(r.Context())
-	err := sqlitex.Execute(conn, "SELECT slug, url, hits FROM redirect", &sqlitex.ExecOptions{
+	err := sqlitex.Execute(conn, query, &sqlitex.ExecOptions{
 		ResultFunc: func(stmt *sqlite.Stmt) error {
 			var r row
 			r.Slug = stmt.ColumnText(0)
 			r.URL = stmt.ColumnText(1)
 			r.Hits = stmt.ColumnInt(2)
+			if s, _ := url.JoinPath(a.config.ShortUrl, r.Slug); s != "" {
+				r.Short = s
+			}
 			list = append(list, r)
 			return nil
 		},
@@ -374,7 +411,69 @@ func (a *app) listHandler(w http.ResponseWriter, r *http.Request) {
 		return
 	}
 
-	err = listTemplate.Execute(w, &templateData{Style: template.CSS(styleCSS), Data: &list})
+	defaultDir := func(col string) string {
+		if col == "hits" {
+			return "desc"
+		}
+		return "asc"
+	}
+
+	nextDir := func(col string) string {
+		if sort == col {
+			if dir == "asc" {
+				return "desc"
+			}
+			if dir == "desc" {
+				return "asc"
+			}
+			// dir not set, toggle the default
+			if defaultDir(col) == "asc" {
+				return "desc"
+			}
+			return "asc"
+		}
+		return defaultDir(col)
+	}
+
+	indicator := func(col string) string {
+		if sort != col {
+			return ""
+		}
+		eff := dir
+		if eff != "asc" && eff != "desc" {
+			eff = defaultDir(col)
+		}
+		if eff == "asc" {
+			return " ↑"
+		}
+		return " ↓"
+	}
+
+	type pageData struct {
+		List          []row
+		Sort          string
+		Dir           string
+		LinkSlug      string
+		LinkHits      string
+		LinkURL       string
+		SlugIndicator string
+		HitsIndicator string
+		UrlIndicator  string
+	}
+
+	pd := &pageData{
+		List:          list,
+		Sort:          sort,
+		Dir:           dir,
+		LinkSlug:      nextDir("slug"),
+		LinkHits:      nextDir("hits"),
+		LinkURL:       nextDir("url"),
+		SlugIndicator: indicator("slug"),
+		HitsIndicator: indicator("hits"),
+		UrlIndicator:  indicator("url"),
+	}
+
+	err = listTemplate.Execute(w, &templateData{Style: template.CSS(styleCSS), Data: pd})
 	if err != nil {
 		http.Error(w, err.Error(), http.StatusInternalServerError)
 		return
