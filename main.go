@@ -29,6 +29,9 @@ type app struct {
 	dbpool   *sqlitex.Pool
 	write    sync.Mutex
 	shutdown gsd.Shutdowner
+	// hits aggregation
+	hitsChan chan string
+	hitsWG   sync.WaitGroup
 }
 
 type config struct {
@@ -236,6 +239,57 @@ func (a *app) shortenHandler(w http.ResponseWriter, r *http.Request) {
 
 	w.WriteHeader(http.StatusCreated)
 	writeShortenedURL(w, slug)
+}
+
+// startHitsAggregator starts a background worker that batches hit increments.
+func (a *app) startHitsAggregator() {
+	a.hitsWG.Go(func() {
+		counts := make(map[string]int)
+		ticker := time.NewTicker(500 * time.Millisecond)
+		defer ticker.Stop()
+		flush := func() {
+			if len(counts) == 0 {
+				return
+			}
+			// copy and reset
+			local := counts
+			counts = make(map[string]int)
+			// perform updates in a transaction
+			a.write.Lock()
+			conn, err := a.dbpool.Take(context.Background())
+			if err == nil {
+				_ = sqlitex.ExecuteTransient(conn, "BEGIN", nil)
+				for slug, cnt := range local {
+					_ = sqlitex.Execute(conn, "UPDATE redirect SET hits = hits + ? WHERE slug = ?", &sqlitex.ExecOptions{Args: []any{cnt, slug}})
+				}
+				_ = sqlitex.ExecuteTransient(conn, "COMMIT", nil)
+				a.dbpool.Put(conn)
+			}
+			a.write.Unlock()
+		}
+		for {
+			select {
+			case s, ok := <-a.hitsChan:
+				if !ok {
+					flush()
+					return
+				}
+				counts[s]++
+				// flush if too many accumulated
+				if len(counts) > 500 {
+					flush()
+				}
+			case <-ticker.C:
+				flush()
+			}
+		}
+	})
+	// ensure aggregator is stopped on shutdown
+	a.shutdown.Add(func() {
+		close(a.hitsChan)
+		// wait for goroutine to finish
+		a.hitsWG.Wait()
+	})
 }
 
 func (a *app) shortenTextHandler(w http.ResponseWriter, r *http.Request) {

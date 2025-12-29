@@ -29,6 +29,9 @@ func (a *app) openDatabase() (err error) {
 		log.Println("Closed database")
 	})
 	a.migrateDatabase()
+	// start hits aggregator
+	a.hitsChan = make(chan string, 1000)
+	a.startHitsAggregator()
 	return nil
 }
 
@@ -112,15 +115,23 @@ func (a *app) updateSlug(ctx context.Context, url, typeStr, slug string) error {
 }
 
 func (a *app) increaseHits(slug string) {
-	go func() {
-		a.write.Lock()
-		defer a.write.Unlock()
-		conn, _ := a.dbpool.Take(context.Background())
-		defer a.dbpool.Put(conn)
-		_ = sqlitex.Execute(conn, "UPDATE redirect SET hits = hits + 1 WHERE slug = ?", &sqlitex.ExecOptions{
-			Args: []any{slug},
-		})
-	}()
+	// Try to enqueue; if buffer is full, fall back to an asynchronous DB update so we don't drop hits.
+	select {
+	case a.hitsChan <- slug:
+		return
+	default:
+		// Fallback: update DB in a goroutine (avoid blocking request handling). This ensures we don't drop hits.
+		go func(s string) {
+			a.write.Lock()
+			defer a.write.Unlock()
+			conn, err := a.dbpool.Take(context.Background())
+			if err != nil {
+				return
+			}
+			defer a.dbpool.Put(conn)
+			_ = sqlitex.Execute(conn, "UPDATE redirect SET hits = hits + 1 WHERE slug = ?", &sqlitex.ExecOptions{Args: []any{s}})
+		}(slug)
+	}
 }
 
 func (a *app) slugExists(slug string) (exists bool, err error) {

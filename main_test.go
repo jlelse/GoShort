@@ -7,11 +7,13 @@ import (
 	"net/http/httptest"
 	"path/filepath"
 	"strings"
+	"sync"
 	"testing"
 	"time"
 
 	"github.com/stretchr/testify/assert"
 	"github.com/stretchr/testify/require"
+	"zombiezen.com/go/sqlite"
 	"zombiezen.com/go/sqlite/sqlitex"
 )
 
@@ -353,5 +355,133 @@ func TestListUI(t *testing.T) {
 		s = string(body)
 		assert.Contains(t, s, "Hits ↓")
 		assert.Contains(t, s, "href=\"/l?sort=hits&dir=asc\"")
+	})
+}
+
+func TestHitsAggregator(t *testing.T) {
+	t.Run("Hit aggregation", func(t *testing.T) {
+		app := testApp(t)
+		defer closeTestApp(t, app)
+
+		router := app.initRouter()
+
+		// initial hits
+		conn, err := app.dbpool.Take(context.Background())
+		require.NoError(t, err)
+		var initial int
+		err = sqlitex.Execute(conn, "SELECT hits FROM redirect WHERE slug = ?", &sqlitex.ExecOptions{Args: []any{"source"}, ResultFunc: func(stmt *sqlite.Stmt) error {
+			initial = stmt.ColumnInt(0)
+			return nil
+		}})
+		require.NoError(t, err)
+		app.dbpool.Put(conn)
+
+		// send many hits quickly
+		count := 200
+		for range count {
+			req := httptest.NewRequest("GET", "http://example.com/source", nil)
+			w := httptest.NewRecorder()
+			router.ServeHTTP(w, req)
+		}
+
+		// wait for aggregator flush
+		time.Sleep(700 * time.Millisecond)
+
+		// check hits increased
+		conn, err = app.dbpool.Take(context.Background())
+		require.NoError(t, err)
+		var after int
+		err = sqlitex.Execute(conn, "SELECT hits FROM redirect WHERE slug = ?", &sqlitex.ExecOptions{Args: []any{"source"}, ResultFunc: func(stmt *sqlite.Stmt) error {
+			after = stmt.ColumnInt(0)
+			return nil
+		}})
+		require.NoError(t, err)
+		app.dbpool.Put(conn)
+
+		assert.True(t, after-initial >= count)
+	})
+}
+
+func TestHitsNoDrop(t *testing.T) {
+	t.Run("No hits dropped under concurrent load", func(t *testing.T) {
+		app := testApp(t)
+		defer closeTestApp(t, app)
+
+		router := app.initRouter()
+
+		conn, err := app.dbpool.Take(context.Background())
+		require.NoError(t, err)
+		var initial int
+		err = sqlitex.Execute(conn, "SELECT hits FROM redirect WHERE slug = ?", &sqlitex.ExecOptions{Args: []any{"source"}, ResultFunc: func(stmt *sqlite.Stmt) error {
+			initial = stmt.ColumnInt(0)
+			return nil
+		}})
+		require.NoError(t, err)
+		app.dbpool.Put(conn)
+
+		// concurrent requests
+		count := 1500
+		var wg sync.WaitGroup
+		wg.Add(count)
+		for range count {
+			go func() {
+				defer wg.Done()
+				req := httptest.NewRequest("GET", "http://example.com/source", nil)
+				w := httptest.NewRecorder()
+				router.ServeHTTP(w, req)
+			}()
+		}
+		wg.Wait()
+
+		// wait for aggregator flush
+		time.Sleep(1 * time.Second)
+
+		conn, err = app.dbpool.Take(context.Background())
+		require.NoError(t, err)
+		var after int
+		err = sqlitex.Execute(conn, "SELECT hits FROM redirect WHERE slug = ?", &sqlitex.ExecOptions{Args: []any{"source"}, ResultFunc: func(stmt *sqlite.Stmt) error {
+			after = stmt.ColumnInt(0)
+			return nil
+		}})
+		require.NoError(t, err)
+		app.dbpool.Put(conn)
+
+		assert.Equal(t, initial+count, after)
+	})
+}
+
+func TestShutdownNoDeadlock(t *testing.T) {
+	t.Run("Shutdown does not deadlock while flushing hits", func(t *testing.T) {
+		app := testApp(t)
+
+		router := app.initRouter()
+
+		// spawn some concurrent requests
+		count := 500
+		var wg sync.WaitGroup
+		wg.Add(count)
+		for range count {
+			go func() {
+				defer wg.Done()
+				req := httptest.NewRequest("GET", "http://example.com/source", nil)
+				w := httptest.NewRecorder()
+				router.ServeHTTP(w, req)
+			}()
+		}
+		wg.Wait()
+
+		// call shutdown and ensure it returns within timeout
+		done := make(chan struct{})
+		go func() {
+			app.shutdown.ShutdownAndWait()
+			close(done)
+		}()
+
+		select {
+		case <-done:
+			// success
+		case <-time.After(3 * time.Second):
+			t.Fatal("shutdown did not complete in time (possible deadlock)")
+		}
 	})
 }
