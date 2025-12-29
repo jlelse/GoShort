@@ -14,11 +14,11 @@ FROM build AS test
 
 RUN go test -timeout 300s -failfast -cover ./...
 
-FROM alpine:3.23 AS base
+FROM scratch AS base
 
 WORKDIR /app
 VOLUME /app/config
 VOLUME /app/data
 EXPOSE 8080
-CMD ["goshort"]
-COPY --from=build /app/goshort /bin/
+COPY --from=build /app/goshort /goshort
+CMD ["/goshort"]
