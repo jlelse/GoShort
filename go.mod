@@ -4,7 +4,7 @@ go 1.25.0
 
 require (
 	git.jlel.se/jlelse/go-shutdowner v0.0.0-20210707065515-773db8099c30
-	github.com/go-chi/chi/v5 v5.2.3
+	github.com/go-chi/chi/v5 v5.2.4
 	github.com/spf13/viper v1.21.0
 	github.com/stretchr/testify v1.11.1
 	zombiezen.com/go/sqlite v1.4.2
