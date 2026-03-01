@@ -19,9 +19,9 @@
 </thead>
 <tbody>
 {{range .Data.List}}<tr>
-<td>{{.Slug}}</td>
+<td class="cell-truncate" title="{{.Slug}}">{{.Slug}}</td>
 <td>{{.Hits}}</td>
-<td>{{.URL}}</td>
+<td class="cell-truncate" title="{{.URL}}">{{.URL}}</td>
 <td><div class="btn-group"><a class="btn btn-sm btn-outline" href="#" onclick="copyText('{{.Short}}'); return false;">Copy</a>{{if eq .Type "text"}}<a class="btn btn-sm btn-outline" href="/ut?slug={{.Slug}}&new={{.URL}}">Update</a>{{else}}<a class="btn btn-sm btn-outline" href="/u?slug={{.Slug}}&new={{.URL}}">Update</a>{{end}}<a class="btn btn-sm btn-danger" href="/d?slug={{.Slug}}">Delete</a></div></td>
 </tr>{{end}}
 </tbody>

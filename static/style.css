@@ -60,6 +60,13 @@ td {
     border-bottom: 1px solid var(--border);
 }
 
+.cell-truncate {
+    max-width: 30vw;
+    overflow: hidden;
+    text-overflow: ellipsis;
+    white-space: nowrap
+}
+
 a {
     color: var(--accent);
     text-decoration: none
