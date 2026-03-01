@@ -408,6 +408,7 @@ func (a *app) listHandler(w http.ResponseWriter, r *http.Request) {
 	type row struct {
 		Slug  string
 		URL   string
+		Type  string
 		Hits  int
 		Short string
 	}
@@ -443,7 +444,7 @@ func (a *app) listHandler(w http.ResponseWriter, r *http.Request) {
 		orderBy = "created " + swi(effectiveDir)
 	}
 
-	query := "SELECT slug, url, hits FROM redirect ORDER BY " + orderBy
+	query := "SELECT slug, url, type, hits FROM redirect ORDER BY " + orderBy
 
 	conn, _ := a.dbpool.Take(r.Context())
 	err := sqlitex.Execute(conn, query, &sqlitex.ExecOptions{
@@ -451,7 +452,8 @@ func (a *app) listHandler(w http.ResponseWriter, r *http.Request) {
 			var r row
 			r.Slug = stmt.ColumnText(0)
 			r.URL = stmt.ColumnText(1)
-			r.Hits = stmt.ColumnInt(2)
+			r.Type = stmt.ColumnText(2)
+			r.Hits = stmt.ColumnInt(3)
 			if s, _ := url.JoinPath(a.config.ShortUrl, r.Slug); s != "" {
 				r.Short = s
 			}

@@ -46,7 +46,7 @@ The service listens on port `8080` inside the container. Mount a `config` direct
 
 Building from source is useful if you want to make changes, test locally, or don't want to use Docker.
 
-Install Go (>= 1.25) then:
+Install Go (>= 1.26) then:
 
 ```bash
 # build

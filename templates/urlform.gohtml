@@ -7,7 +7,7 @@
 <title>{{.Data.Title}}</title>
 <h1>{{.Data.Title}}</h1>
 <form action={{.Data.URL}} method=post>
-{{range .Data.Fields}}<input type=text name={{index . 0}} placeholder={{index . 0}} value="{{index . 1}}"><br>{{end}}
-<input type=submit value={{.Data.Title}}>
+{{range .Data.Fields}}<input type=text name={{index . 0}} placeholder={{index . 0}} value="{{index . 1}}">{{end}}
+<button class="btn" type=submit>{{.Data.Title}}</button>
 </form>
 </html>
