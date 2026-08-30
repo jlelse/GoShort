@@ -1,4 +1,4 @@
-FROM golang:1.26-alpine3.23 as buildbase
+FROM golang:1.27-alpine3.24 as buildbase
 
 WORKDIR /app
 ENV CGO_ENABLED=0
