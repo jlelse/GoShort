@@ -8,6 +8,7 @@ ADD static/ /app/static/
 
 FROM buildbase AS build
 
+RUN apk add --no-cache ca-certificates
 RUN go build -ldflags '-w -s' -o goshort
 
 FROM build AS test
@@ -20,5 +21,6 @@ WORKDIR /app
 VOLUME /app/config
 VOLUME /app/data
 EXPOSE 8080
+COPY --from=build /etc/ssl/certs/ca-certificates.crt /etc/ssl/certs/ca-certificates.crt
 COPY --from=build /app/goshort /goshort
 CMD ["/goshort"]
