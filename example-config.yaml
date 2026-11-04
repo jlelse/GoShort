@@ -1,4 +1,11 @@
 dbPath: "data/goshort.db"
 password: "password"
+# Optional: log in with OpenID Connect instead of or in addition to the password
+#oidc:
+#  issuer: "https://id.example.com"
+#  clientId: "goshort"
+#  clientSecret: "secret"
+#  # defaults to <shortUrl>/oidc/callback
+#  redirectUrl: "https://short.example.com/oidc/callback"
 shortUrl: "https://short.example.com"
 defaultUrl: "https://long.example.com"

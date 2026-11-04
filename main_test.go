@@ -133,29 +133,29 @@ func Test_checkPassword(t *testing.T) {
 	t.Run("No password", func(t *testing.T) {
 		req := httptest.NewRequest("GET", "http://example.com/test", nil)
 
-		assert.False(t, app.checkPassword(httptest.NewRecorder(), req))
+		assert.False(t, app.checkPassword(req))
 	})
 	t.Run("Password via query", func(t *testing.T) {
 		req := httptest.NewRequest("GET", "http://example.com/test?password=abc", nil)
 
-		assert.True(t, app.checkPassword(httptest.NewRecorder(), req))
+		assert.True(t, app.checkPassword(req))
 	})
 	t.Run("Wrong password via query", func(t *testing.T) {
 		req := httptest.NewRequest("GET", "http://example.com/test?password=wrong", nil)
 
-		assert.False(t, app.checkPassword(httptest.NewRecorder(), req))
+		assert.False(t, app.checkPassword(req))
 	})
 	t.Run("Password via BasicAuth", func(t *testing.T) {
 		req := httptest.NewRequest("GET", "http://example.com/test", nil)
 		req.SetBasicAuth("username", "abc")
 
-		assert.True(t, app.checkPassword(httptest.NewRecorder(), req))
+		assert.True(t, app.checkPassword(req))
 	})
 	t.Run("Wrong password via BasicAuth", func(t *testing.T) {
 		req := httptest.NewRequest("GET", "http://example.com/test", nil)
 		req.SetBasicAuth("username", "wrong")
 
-		assert.False(t, app.checkPassword(httptest.NewRecorder(), req))
+		assert.False(t, app.checkPassword(req))
 	})
 
 	t.Run("Test login middleware success", func(t *testing.T) {

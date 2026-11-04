@@ -4,9 +4,12 @@ go 1.26.0
 
 require (
 	git.jlel.se/jlelse/go-shutdowner v0.0.0-20210707065515-773db8099c30
+	github.com/coreos/go-oidc/v3 v3.21.0
 	github.com/go-chi/chi/v5 v5.5.0
+	github.com/go-jose/go-jose/v4 v4.1.8
 	github.com/spf13/viper v1.21.0
 	github.com/stretchr/testify v1.12.1
+	golang.org/x/oauth2 v0.37.0
 	zombiezen.com/go/sqlite v1.4.2
 )
 

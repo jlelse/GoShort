@@ -27,6 +27,7 @@ import (
 type app struct {
 	config   *config
 	dbpool   *sqlitex.Pool
+	oidc     *oidcProvider
 	write    sync.Mutex
 	shutdown gsd.Shutdowner
 	// hits aggregation
@@ -35,11 +36,12 @@ type app struct {
 }
 
 type config struct {
-	Port       int    `mapstructure:"port"`
-	DBPath     string `mapstructure:"dbPath"`
-	Password   string `mapstructure:"password"`
-	ShortUrl   string `mapstructure:"shortUrl"`
-	DefaultUrl string `mapstructure:"defaultUrl"`
+	Port       int        `mapstructure:"port"`
+	DBPath     string     `mapstructure:"dbPath"`
+	Password   string     `mapstructure:"password"`
+	OIDC       oidcConfig `mapstructure:"oidc"`
+	ShortUrl   string     `mapstructure:"shortUrl"`
+	DefaultUrl string     `mapstructure:"defaultUrl"`
 }
 
 func (a *app) initRouter() (router *chi.Mux) {
@@ -58,6 +60,10 @@ func (a *app) initRouter() (router *chi.Mux) {
 		r.Post("/d", a.deleteHandler)
 		r.Get("/l", a.listHandler)
 	})
+	if a.oidc != nil {
+		router.Get("/oidc/login", a.oidcLoginHandler)
+		router.Get("/oidc/callback", a.oidcCallbackHandler)
+	}
 	router.Get("/{slug}", a.shortenedURLHandler)
 	router.Get("/", a.defaultURLRedirectHandler)
 	return
@@ -72,8 +78,8 @@ func main() {
 	viper.AddConfigPath(".")
 	_ = viper.ReadInConfig()
 
-	if !viper.IsSet("password") {
-		log.Fatal("No password (password) is configured.")
+	if !viper.IsSet("password") && !viper.IsSet("oidc.issuer") {
+		log.Fatal("No authentication configured. Set password or oidc.issuer.")
 		return
 	}
 	if !viper.IsSet("shortUrl") {
@@ -92,6 +98,21 @@ func main() {
 	if err != nil {
 		log.Fatal("Failed to unmarshal config:", err.Error())
 		return
+	}
+
+	if app.config.OIDC.Issuer != "" {
+		if app.config.OIDC.RedirectURL == "" {
+			app.config.OIDC.RedirectURL = strings.TrimSuffix(app.config.ShortUrl, "/") + "/oidc/callback"
+		}
+		ctx, cancel := context.WithTimeout(context.Background(), 10*time.Second)
+		app.oidc, err = newOIDCProvider(ctx, app.config.OIDC)
+		cancel()
+		if err != nil {
+			log.Println("Failed to initialize OIDC:", err.Error())
+			app.shutdown.ShutdownAndWait()
+			os.Exit(1)
+			return
+		}
 	}
 
 	err = app.openDatabase()
@@ -128,10 +149,16 @@ func main() {
 
 func (a *app) loginMiddleware(next http.Handler) http.Handler {
 	return http.HandlerFunc(func(w http.ResponseWriter, r *http.Request) {
-		if !a.checkPassword(w, r) {
+		if a.checkPassword(r) || (a.oidc != nil && a.oidc.validSession(r)) {
+			next.ServeHTTP(w, r)
 			return
 		}
-		next.ServeHTTP(w, r)
+		if a.oidc != nil && !a.passwordAttempted(r) {
+			http.Redirect(w, r, a.oidcLoginURL(r.URL.RequestURI()), http.StatusSeeOther)
+			return
+		}
+		w.Header().Set("WWW-Authenticate", `Basic realm="Please enter a password!"`)
+		http.Error(w, "Not authenticated", http.StatusUnauthorized)
 	})
 }
 
@@ -536,19 +563,21 @@ func (a *app) listHandler(w http.ResponseWriter, r *http.Request) {
 	}
 }
 
-func (a *app) checkPassword(w http.ResponseWriter, r *http.Request) bool {
-	// Check basic auth
+func (a *app) checkPassword(r *http.Request) bool {
+	if a.config.Password == "" {
+		return false
+	}
 	if _, pass, ok := r.BasicAuth(); ok && pass == a.config.Password {
 		return true
 	}
-	// Check query or form param
-	if r.FormValue("password") == a.config.Password {
+	return r.FormValue("password") == a.config.Password
+}
+
+func (a *app) passwordAttempted(r *http.Request) bool {
+	if _, _, ok := r.BasicAuth(); ok {
 		return true
 	}
-	// Require password
-	w.Header().Set("WWW-Authenticate", `Basic realm="Please enter a password!"`)
-	http.Error(w, "Not authenticated", http.StatusUnauthorized)
-	return false
+	return r.FormValue("password") != ""
 }
 
 func generateSlug() string {

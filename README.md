@@ -125,13 +125,15 @@ Configuration can be done with a simple `config.{json|yaml|toml}` file in the wo
 
 Required config values:
 
-* `password`: Password to create, update or delete short links
 * `shortUrl`: The short base URL (without trailing slash!)
 * `defaultUrl`: The default URL to which should be redirected when no slug is specified
+* At least one authentication method: `password` or `oidc.issuer`
 
 Optional config values:
 
 * `dbPath`: Relative path where the database should be saved
+* `oidc.clientId`, `oidc.clientSecret`: OIDC client credentials
+* `oidc.redirectUrl`: OIDC callback URL, defaults to `<shortUrl>/oidc/callback`
 
 See the `example-config.yaml` file for an example configuration.
 
@@ -139,7 +141,20 @@ See the `example-config.yaml` file for an example configuration.
 
 ## Authentication
 
-The preferred authentication method is Basic Authentication. If you try to create, modify or delete a short link, in the browser a popup will appear asking for username and password — enter just the password you configured. Alternatively you can append a URL query parameter `password` with your configured password.
+GoShort supports Basic Authentication with a password and/or OpenID Connect (OIDC).
+
+With a password, a browser popup will appear asking for username and password — enter just the password you configured. Alternatively you can append a URL query parameter `password` with your configured password.
+
+With OIDC configured, visitors without a valid session are redirected to the provider's login page. Any user who logs in successfully can access the authenticated endpoints. Sessions are stored in a signed cookie and are valid for 7 days; restarting GoShort invalidates existing sessions.
+
+Create an OIDC client in your provider and set the callback URL to `https://short.example.com/oidc/callback`. Use the provider's issuer URL as `oidc.issuer`:
+
+```yaml
+oidc:
+  issuer: "https://auth.example.com"
+  clientId: "goshort"
+  clientSecret: "your-client-secret"
+```
 
 ---
 
